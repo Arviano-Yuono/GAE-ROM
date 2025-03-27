@@ -22,7 +22,6 @@ model:
     bottleneck: 128
 
   encoder:
-    type: GAE
     hidden_channels: [128, 128, 128]  # for GNN
     bottleneck: 128  # output dimension of GNN and input dimension of MLP
     ffn: [128, 128, 128]  # for MLP
@@ -31,7 +30,6 @@ model:
     graph_pooling: TopKPooling
 
   decoder:
-    type: GAE 
     hidden_channels: [128, 128, 128]  # for GNN
     bottleneck: 128 # output dimension of MLP and input dimension of GNN
     ffn: [128, 128, 128]  # for MLP
@@ -43,14 +41,15 @@ model:
 training:
   epochs: 100
   batch_size: 128
-
+  print_train: 10
+  
   optimizer:
-    optimizer: Adam
+    type: Adam # [Adam, AdamW]
     learning_rate: 0.001
     weight_decay: 0.0001
 
   scheduler:
-    scheduler: StepLR
+    type: StepLR # [StepLR, CosineAnnealingLR]
     step_size: 10
     gamma: 0.1
 
