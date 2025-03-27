@@ -39,21 +39,11 @@ class ConvolutionLayers(nn.Module):
             else:
                 raise ValueError(f"Invalid message passing type: {self.config['model']['convolution_layers']['type']}")
 
-        self.fc_in1 = nn.Linear(self.config['model']['convolution_layers']['hidden_channels'], self.config['model']['convolution_layers']['ffn'])
-        self.fc_in2 = nn.Linear(self.config['model']['convolution_layers']['ffn'], self.config['model']['convolution_layers']['bottleneck'])
-
-
-    def forward(self, x, edge_index):
-        for conv in self.convs:
-            x = self.act(conv(x, edge_index))
-            x = self.dropout(x)
-        x = x.reshape(x.size(0), -1)
-        x = self.act(self.fc_in1(x))
-        x = self.fc_in2(x)
-        return x
+        self.fc1 = nn.Linear(self.config['model']['convolution_layers']['hidden_channels'], self.config['model']['convolution_layers']['ffn'])
+        self.fc2 = nn.Linear(self.config['model']['convolution_layers']['ffn'], self.config['model']['convolution_layers']['bottleneck'])
 
     def reset_parameters(self):
         for conv in self.convs:
             conv.reset_parameters()
-        self.fc_in1.reset_parameters()
-        self.fc_in2.reset_parameters()
+        self.fc1.reset_parameters()
+        self.fc2.reset_parameters()
