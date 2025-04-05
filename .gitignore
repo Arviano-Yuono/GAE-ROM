@@ -1,0 +1,10 @@
+dataset/
+pycache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pyx
+*.pyi

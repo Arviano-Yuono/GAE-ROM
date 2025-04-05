@@ -40,6 +40,25 @@ def save_config(config: dict, save_path: str):
         yaml.dump(config, f)
 
 
+def reset_imports():
+    import sys
+    import os
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    import src.model.encoder
+    import src.model.decoder
+    import src.model.autoencoder
+    import src.model.convolution_layers
+    import src.model.gae
+    import src.data.loader
+    import src.utils.commons
+
+
+
+
+
+
+
+
 
 
 

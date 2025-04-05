@@ -52,7 +52,7 @@ model:
 
 training:
   epochs: 100
-  batch_size: 32
+  batch_size: 1
   print_train: 10
 
   optimizer:

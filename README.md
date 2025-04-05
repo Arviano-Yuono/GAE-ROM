@@ -28,16 +28,36 @@ pip install -e ".[dev]"
 
 ```
 GAE-ROM/
-├── gae_rom/                 # Main package directory
-│   ├── model/              # Model implementations
-│   ├── data/               # Data handling
-│   ├── training/           # Training utilities
-│   ├── utils/              # Utility functions
-│   └── config/             # Configuration management
-├── configs/                # Configuration files
-├── examples/               # Example scripts
-├── tests/                  # Unit tests
-└── docs/                   # Documentation
+├── .git/
+├── configs/
+│   └── default.yaml
+├── dataset/
+├── output/
+├── src/
+│   ├── data/
+│   │   ├── __pycache__/
+│   │   ├── loader.py
+│   │   └── transform.py
+│   ├── model/
+│   │   ├── autoencoder.py
+│   │   ├── convolution_layers.py
+│   │   ├── decoder.py
+│   │   ├── encoder.py
+│   │   └── gae.py
+│   ├── training/
+│   │   └── train.py
+│   └── utils/
+│       ├── __pycache__/
+│       ├── __init__.py
+│       ├── commons.py
+│       ├── metrics.py
+│       ├── normalization.py
+│       └── scaler.py
+├── mesh_to_graph.py
+├── README.md
+├── requirements.txt
+├── setup.py
+└── test_training.ipynb
 ```
 
 ## Usage
