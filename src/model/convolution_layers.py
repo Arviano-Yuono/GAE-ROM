@@ -16,54 +16,47 @@ class ConvolutionLayers(nn.Module):
         self.dropout = nn.Dropout(self.config['dropout'])
 
         self.convs = nn.ModuleList()
-        # First layer needs to handle input dimension
         if self.config['type'] == 'GMMConv':
-            self.convs.append(gnn.GMMConv(2,  # input channels (velocity x,y)
+            self.convs.append(gnn.GMMConv(self.config['dim'],  # input channels (velocity x,y)
                                          self.config['hidden_channels'][0],  # output channels
                                          dim=self.config['dim'], 
                                          kernel_size=self.config['kernel_size']))
             
-            # Add remaining layers
-            for hidden_channel in self.config['hidden_channels'][:-1]:
+            for i, hidden_channel in enumerate(self.config['hidden_channels'][:-1]):
                 self.convs.append(gnn.GMMConv(hidden_channel,  
-                                            hidden_channel, 
+                                            self.config['hidden_channels'][i+1], 
                                             dim=self.config['dim'], 
                                             kernel_size=self.config['kernel_size']))
                 
         elif self.config['type'] == 'ChebConv':
-            self.convs.append(gnn.ChebConv(2,  # input channels
+            self.convs.append(gnn.ChebConv(self.config['dim'],  # input channels
                                          self.config['hidden_channels'][0],  # output channels
                                          K=self.config['K']))
             
-            for hidden_channel in self.config['hidden_channels'][:-1]:
+            for i, hidden_channel in enumerate(self.config['hidden_channels'][:-1]):
                 self.convs.append(gnn.ChebConv(hidden_channel, 
-                                             hidden_channel, 
+                                             self.config['hidden_channels'][i+1], 
                                              K=self.config['K']))
                 
         elif self.config['type'] == 'GCNConv':
-            self.convs.append(gnn.GCNConv(2,  # input channels
+            self.convs.append(gnn.GCNConv(self.config['dim'],  # input channels
                                          self.config['hidden_channels'][0]))  # output channels
             
-            for hidden_channel in self.config['hidden_channels'][:-1]:
+            for i, hidden_channel in enumerate(self.config['hidden_channels'][:-1]):
                 self.convs.append(gnn.GCNConv(hidden_channel, 
-                                            hidden_channel))
+                                            self.config['hidden_channels'][i+1]))
                 
         elif self.config['type'] == 'GATConv':
-            self.convs.append(gnn.GATConv(2,  # input channels
+            self.convs.append(gnn.GATConv(self.config['dim'],  # input channels
                                          self.config['hidden_channels'][0]))  # output channels
             
-            for hidden_channel in self.config['hidden_channels'][:-1]:
+            for i, hidden_channel in enumerate(self.config['hidden_channels'][:-1]):
                 self.convs.append(gnn.GATConv(hidden_channel, 
-                                            hidden_channel))
+                                            self.config['hidden_channels'][i+1]))
                 
         else:
             raise ValueError(f"Invalid message passing type: {self.config['type']}")
 
-        self.fc1 = nn.Linear(self.config['hidden_channels'][-1], self.config['ffn'])
-        self.fc2 = nn.Linear(self.config['ffn'], self.config['bottleneck'])
-
     def reset_parameters(self):
         for conv in self.convs:
             conv.reset_parameters()
-        self.fc1.reset_parameters()
-        self.fc2.reset_parameters()
