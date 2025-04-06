@@ -12,7 +12,7 @@ from torch.optim.adamw import AdamW
 
 import tqdm
 
-config = commons.get_config('configs/default.yaml')
+config = commons.get_config('configs/default.yaml')['training']
 
 def train(model, optimizer: torch.optim.Optimizer, 
           device: torch.device, 
@@ -26,21 +26,32 @@ def train(model, optimizer: torch.optim.Optimizer,
 
     # training loop
     model.train()
-    loop = tqdm.tqdm(range(config['training']['epochs']))
+    loop = tqdm.tqdm(range(config['epochs']))
     for i in loop:
-        reconstruction_loss = torch.tensor(0., device=device)
-        for batch in train_loader:
-            # print(batch)
-            batch = batch.to(device)
-            optimizer.zero_grad()
-            out = model(batch).to(device)
-            reconstruction_loss += F.mse_loss(input=out, target=batch.x)
+        # implement torch amp
+        if config['amp']:
+            with torch.amp.autocast(device_type=device.type, dtype=torch.bfloat16):
+                reconstruction_loss = torch.tensor(0., device=device)
+                for batch in train_loader:
+                    # print(batch)
+                    batch = batch.to(device)
+                    optimizer.zero_grad()
+                    out = model(batch).to(device)
+                    reconstruction_loss += F.mse_loss(input=out, target=batch.x)
+        else:
+            reconstruction_loss = torch.tensor(0., device=device)
+            for batch in train_loader:
+                # print(batch)
+                batch = batch.to(device)
+                optimizer.zero_grad()
+                out = model(batch).to(device)
+                reconstruction_loss += F.mse_loss(input=out, target=batch.x)
         loss_train = reconstruction_loss / len(train_loader)  # Average the loss
         loss_train.backward()
         optimizer.step()
         scheduler.step()
         train_history['train_loss'].append(loss_train.item())
-        if i % config['training']['print_train'] == 0:
-            print(f"Epoch {i+1}/{config['training']['epochs']}, Loss: {loss_train.item()}")
+        if i % config['print_train'] == 0:
+            print(f"Epoch {i+1}/{config['epochs']}, Loss: {loss_train.item()}")
     
     return train_history
