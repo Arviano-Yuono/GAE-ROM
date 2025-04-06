@@ -23,7 +23,8 @@ class GraphDataset(Dataset):
         self.points, self.triangles, self.areas = self.transform_mesh()
         self.cell_coordinates = self.compute_cell_center_coordinates()
         self.edge_list, self.edge_weights, self.edge_features = self.compute_edge_features()
-        
+        self.num_nodes = self.triangles.shape[0]
+
         # load data
         self.h5_file = h5py.File(os.path.join(config['split_dir'], f'{split}.h5'), 'r')
         self.file_length = len(self.h5_file)
@@ -178,7 +179,7 @@ class GraphDataset(Dataset):
         
         
         return edge_list, edge_weights, edge_features
-
+    
     def compute_edge_distances(self, edge_list):
         edge_distances = []
         for edge in edge_list.T:
@@ -186,7 +187,15 @@ class GraphDataset(Dataset):
             # print(dist)
             edge_distances.append(dist)
         return np.array(edge_distances)
-
+    
+    @staticmethod
+    def compute_edge_distances_static(cell_coordinates, edge_list):
+        edge_distances = []
+        for edge in edge_list.T:
+            dist = np.linalg.norm(cell_coordinates[edge[0]] - cell_coordinates[edge[1]])
+            edge_distances.append(dist)
+        return np.array(edge_distances)
+    
     def get_data(self):
         points, triangles, areas = self.transform_mesh()
         edge_list, edge_weights, edge_features = self.compute_edge_features()
