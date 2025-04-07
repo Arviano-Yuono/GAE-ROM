@@ -1,8 +1,7 @@
 config:
-  name: default
+  name: reduced
   seed: 42
   device: cuda
-  num_workers: 0
   root_dir: ./ # project root dir
   dataset_dir: ./dataset/cylinder_vonkarman/Re200_cut/flow # dataset dir
   split_dir: ./dataset/cylinder_vonkarman/Re200_cut/flow_split # split dir
@@ -12,49 +11,59 @@ config:
   data_sample: 20 # number of data samples to use for training
 
 model:
-  convolution_layers:
-    type: ChebConv # [GMMConv, ChebConv, GCNConv, GATConv]
-    hidden_channels: [64, 64, 64]
-    act: relu
-    dropout: 0.1 # probability
-    kernel_size: 5
-    K: 5
-    dim: 2
-    ffn: 64
-    bottleneck: 64
-
   encoder:
-    hidden_channels: [128, 128, 64]  # Reduced from [256, 256, 128]
-    bottleneck: 64  # Reduced from 128
-    ffn: [64, 64, 25]  # Reduced from [128, 128, 25]
     act: relu
     conv: GMMConv
-    dim: 1
-    graph_pooling: TopKPooling
+    convolution_layers:
+      type: ChebConv # [GMMConv, ChebConv, GCNConv, GATConv] so far chebconv is the only one that works
+      hidden_channels: [2, 128, 128, 16] # 2 is the input channels (velocity x,y)
+      act: relu
+      dropout: 0.1 # probability
+      kernel_size: 5
+      K: 5
+      dim: 2 # input channels (velocity x,y)
+    pool:
+      is_pooling: true
+      type: TopKPool
+      in_channels: 128
+      ratio: 0.5
+      dropout: 0.1
 
   autoencoder:
-    input_dim: 25
-    encoder_layers: [25, 100, 100, 100, 100, 2]
-    decoder_layers: [2, 100, 100, 100, 100, 25]
-    latent_dim: 2
+    encoder_layers: [1024, 256, 64, 16]
+    # encoder_layers:  [2048, 1024, 256, 64, 16]
+    decoder_layers: [16, 64, 256, 1024]
+    # decoder_layers: [16, 64, 256, 1024, 2048] 
+    latent_dim: 10
     act: relu
     dropout: 0.1 # probability
 
   decoder:
-    hidden_channels: [64, 128, 128]  # Reduced from [128, 256, 256]
-    bottleneck: 64  # Reduced from 128
-    ffn: [25, 64, 64]  # Reduced from [25, 128, 128]
     act: relu
     conv: GMMConv
-    dim: 1
-    graph_pooling: TopKPooling
+    convolution_layers:
+      type: ChebConv # [GMMConv, ChebConv, GCNConv, GATConv]
+      hidden_channels: [16, 128, 128, 2] # 2 is the output channels (velocity x,y)
+      act: relu
+      dropout: 0.1 # probability
+      kernel_size: 5
+      K: 5
+      dim: 2 # input channels (velocity x,y)
+    unpool:
+      is_unpooling: true
+      type: TopKPool
+      in_channels: 128
+      ratio: 0.4
+      dropout: 0.1
 
 
 training:
-  epochs: 100
-  batch_size: 32
+  model_name: GAE_reduced
+  num_workers: 0
+  epochs: 50
+  batch_size: 1
   print_train: 10
-
+  amp: true
   optimizer:
     type: Adam # [Adam, AdamW]
     learning_rate: 0.001
