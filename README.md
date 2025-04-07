@@ -1,6 +1,6 @@
 # GAE-ROM: Graph Autoencoder for Reduced Order Modeling of Navier-Stokes Equations
 
-A PyTorch implementation of a Graph Autoencoder (GAE) for Reduced Order Modeling (ROM) of Navier-Stokes equations on unstructured meshes.
+A PyTorch implementation of a Graph Autoencoder (GAE) for Reduced Order Modeling (ROM) of Navier-Stokes equations on unstructured meshes. This project provides an efficient framework for learning reduced-order representations of fluid flow simulations using graph neural networks.
 
 ## Features
 
@@ -9,6 +9,9 @@ A PyTorch implementation of a Graph Autoencoder (GAE) for Reduced Order Modeling
 - Efficient data loading and preprocessing for Navier-Stokes solutions
 - Configurable training pipeline with validation and checkpointing
 - Visualization utilities for comparing full-order and reduced-order solutions
+- Support for both 2D and 3D mesh data
+- Automatic mesh-to-graph conversion utilities
+- Comprehensive metrics for evaluating ROM performance
 
 ## Installation
 
@@ -17,59 +20,81 @@ A PyTorch implementation of a Graph Autoencoder (GAE) for Reduced Order Modeling
 git clone https://github.com/yourusername/gae-rom.git
 cd gae-rom
 
-# Install the package
-pip install -e .
+# Create and activate a virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install development dependencies
-pip install -e ".[dev]"
+# Install the package and its dependencies
+pip install -e .
 ```
+
+## Dependencies
+
+The project requires the following main dependencies:
+- PyTorch (>=2.0.0)
+- PyTorch Geometric (>=2.3.0)
+- NumPy (>=1.21.0)
+- SciPy (>=1.7.0)
+- Matplotlib (>=3.4.0)
+- Pandas (>=1.3.0)
+- scikit-learn (>=0.24.0)
+- meshio (>=5.0.0)
+- PyVista (>=0.39.0)
+- VTK (>=9.0.0)
+- h5py (>=3.0.0)
 
 ## Project Structure
 
 ```
 GAE-ROM/
-├── .git/
-├── configs/
-│   └── default.yaml
-├── dataset/
-├── output/
-├── src/
-│   ├── data/
-│   │   ├── __pycache__/
-│   │   ├── loader.py
-│   │   └── transform.py
-│   ├── model/
-│   │   ├── autoencoder.py
-│   │   ├── convolution_layers.py
-│   │   ├── decoder.py
-│   │   ├── encoder.py
-│   │   └── gae.py
-│   ├── training/
-│   │   └── train.py
-│   └── utils/
-│       ├── __pycache__/
-│       ├── __init__.py
-│       ├── commons.py
-│       ├── metrics.py
-│       ├── normalization.py
-│       └── scaler.py
-├── mesh_to_graph.py
-├── README.md
-├── requirements.txt
-├── setup.py
-└── test_training.ipynb
+├── configs/                 # Configuration files
+│   └── default.yaml        # Default training configuration
+├── dataset/                # Directory for storing datasets
+├── output/                 # Directory for model outputs and results
+├── src/                    # Source code
+│   ├── data/              # Data loading and preprocessing
+│   │   ├── loader.py      # Data loading utilities
+│   │   └── transform.py   # Data transformation functions
+│   ├── model/             # Model architecture
+│   │   ├── autoencoder.py # Autoencoder implementation
+│   │   ├── convolution_layers.py # Graph convolution layers
+│   │   ├── decoder.py     # Decoder network
+│   │   ├── encoder.py     # Encoder network
+│   │   └── gae.py         # Main GAE model
+│   ├── training/          # Training utilities
+│   │   └── train.py       # Training pipeline
+│   └── utils/             # Utility functions
+│       ├── commons.py     # Common utilities
+│       ├── metrics.py     # Evaluation metrics
+│       ├── normalization.py # Data normalization
+│       └── scaler.py      # Data scaling utilities
+├── mesh_to_graph.py       # Mesh to graph conversion script
+├── requirements.txt       # Project dependencies
+├── setup.py              # Package installation script
+└── test_training.ipynb   # Training example notebook
 ```
 
 ## Usage
 
+### Data Preparation
+
 1. Prepare your Navier-Stokes data in the required format:
-   - `mesh.npy`: Mesh vertices and elements
-   - `velocity.npy`: Velocity field data
-   - `pressure.npy`: Pressure field data
+   - `mesh.su2`: Mesh vertices and elements
+   - `flow.vtk`: Velocity field data
 
-2. Configure your model and training parameters in `configs/default.yaml`
+2. Convert mesh data to graph format:
+```python
+from gae_rom.utils import mesh_to_graph
 
-3. Train the model:
+# Convert mesh to graph
+graph_data = mesh_to_graph(mesh_path, velocity_path, pressure_path)
+```
+
+### Training
+
+1. Configure your model and training parameters in `configs/default.yaml`
+
+2. Train the model:
 ```python
 from gae_rom.training import GAETrainer
 from gae_rom.config import load_config
@@ -84,6 +109,17 @@ trainer = GAETrainer(config)
 trainer.train(num_epochs=100)
 ```
 
+### Evaluation
+
+```python
+# Load trained model
+model = GAETrainer.load_model("path/to/checkpoint.pt")
+
+# Evaluate on test data
+metrics = trainer.evaluate(test_data)
+print(f"Test metrics: {metrics}")
+```
+
 ## Development
 
 - Run tests: `pytest tests/`
@@ -93,4 +129,8 @@ trainer.train(num_epochs=100)
 
 ## Contributing
 
-Feel free to open issues or submit pull requests if you find any bugs or have suggestions for improvements.
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
