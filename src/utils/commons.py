@@ -9,7 +9,6 @@ import logging
 import yaml
 
 
-
 def set_seed(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -40,14 +39,19 @@ def save_config(config: dict, save_path: str):
         yaml.dump(config, f)
 
 
+def save_model(model: torch.nn.Module, save_path: str):
+    torch.save(model.state_dict(), save_path)
+
+
+def load_model(model: torch.nn.Module, save_path: str):
+    model.load_state_dict(torch.load(save_path))
+    return model
+
+
 def reset_imports():
     import sys
     import os
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    import src.model.encoder
-    import src.model.decoder
-    import src.model.autoencoder
-    import src.model.convolution_layers
     import src.model.gae
     import src.data.loader
     import src.utils.commons
