@@ -1,24 +1,23 @@
 from src.model.gae import GAE
-from src.utils.commons import get_config, save_model, load_model
+from src.training.val import val
+from src.utils.commons import get_config, save_model
 import torch
 import torch_geometric
 import torch.nn.functional as F
-from torch_geometric.data import Data
-
-import torch
-from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR
-from torch.optim.adam import Adam
-from torch.optim.adamw import AdamW
 
 import tqdm
 
+
 config = get_config('configs/default.yaml')['training']
 
-def train(model, 
+def train(model: GAE, 
           device: torch.device, 
           train_loader: torch_geometric.loader.DataLoader,
-          print_every = None,
+          is_val: bool = False,
+          val_loader: torch_geometric.loader.DataLoader = None,
+          is_tqdm: bool = True,
           single_batch: bool = False,
+          save_best_model: bool = True,
           config = config):
     
     torch.cuda.empty_cache()
@@ -43,12 +42,17 @@ def train(model,
     else:
         raise ValueError(f"Invalid scheduler: {config['scheduler']['type']}")
     
-    train_history = dict(train_loss=[])
+    train_history = dict(train_loss=[], val_loss=[])
     best_loss = float('inf')
-
+    loss_val = None
     # training loop
     model.train()
-    loop = tqdm.tqdm(range(config['epochs']))
+
+    if is_tqdm:
+        loop = tqdm.tqdm(range(config['epochs']))
+    else:
+        loop = range(config['epochs'])
+
     for i in loop:
         # implement torch amp
         if config['amp']:
@@ -88,11 +92,24 @@ def train(model,
         loss_train.backward()
         optimizer.step()
         scheduler.step()
+
+        if is_val:
+            loss_val = val(model, device, val_loader)
+            model.train()
+            train_history['val_loss'].append(loss_val.item())
+
         # save best model
-        if loss_train.item() < best_loss:
-            best_loss = loss_train.item()
-            save_model(model, f'artifacts/{config["model_name"]}_best_model.pth')
+        if is_val:
+            if loss_val.item() < best_loss and save_best_model:
+                best_loss = loss_val.item()
+                save_model(model, f'artifacts/{config["model_name"]}_best_model.pth')
+        else:
+            if loss_train.item() < best_loss and save_best_model:
+                best_loss = loss_train.item()
+                save_model(model, f'artifacts/{config["model_name"]}_best_model.pth')
+        
         train_history['train_loss'].append(loss_train.item())
+
         if i != 0 and i % config['print_train'] == 0:
             print(f"Epoch {i+1}/{config['epochs']}, Loss: {loss_train.item()}")
     
