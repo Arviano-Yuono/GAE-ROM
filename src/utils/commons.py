@@ -40,11 +40,30 @@ def save_config(config: dict, save_path: str):
 
 
 def save_model(model: torch.nn.Module, save_path: str):
-    torch.save(model.state_dict(), save_path)
+    # Save the model's state dictionary and additional properties
+    state = {
+        'state_dict': model.state_dict(),
+        'save_config': model.save_config,
+        'config': model.config,
+    }
+    torch.save(state, save_path)
 
 
-def load_model(model: torch.nn.Module, save_path: str):
-    model.load_state_dict(torch.load(save_path))
+def load_model(save_path: str):
+    # Load the complete state
+    state = torch.load(save_path, weights_only=False)
+    
+    # Create a new model instance
+    from src.model.gae import GAE
+    model = GAE(config = state['save_config'])
+    
+    # Load the state dictionary with strict=False to ignore mismatched keys
+    model.load_state_dict(state['state_dict'], strict=False)
+    
+    # Load additional properties
+    model.save_config = state['save_config']
+    model.config = state['config']
+    
     return model
 
 
