@@ -33,15 +33,18 @@ class Encoder(torch.nn.Module):
                 )
             else:
                 raise ValueError(f"Invalid pool method: {self.pool_method}")
-
+        else:
+            self.pool_method = 'None'
+            self.pooling_layer = None
             
     def forward(self, data: Data):
         if data.x is None:
             raise ValueError("Input data.x is None. Please ensure data has node features.")
 
         # Apply all but the last convolution layer
-        for conv in self.convolution_layers.convs[:-1]:
+        for conv, norm in zip(self.convolution_layers.convs[:-1], self.convolution_layers.batch_norms[:-1]):
             data.x = self.convolution_layers.act(conv(data.x, data.edge_index))
+            data.x = norm(data.x)
             data.x = self.convolution_layers.dropout(data.x)
 
         if self.is_pooling:
@@ -49,9 +52,16 @@ class Encoder(torch.nn.Module):
             # Apply the last convolution layer
             pooled_x = self.convolution_layers.act(
                 self.convolution_layers.convs[-1](self.pooled_x, self.pooled_edge_index))
-            # flattened data of data.x
+            pooled_x = self.convolution_layers.batch_norms[-1](pooled_x)
+            pooled_x = self.convolution_layers.dropout(pooled_x)
             return data, pooled_x, self.pooled_edge_index, self.pooled_edge_attr, self.unpool_info # the data returned is the data before pooling
-    
+        else:
+            data.x = self.convolution_layers.act(
+                self.convolution_layers.convs[-1](data.x, data.edge_index))
+            data.x = self.convolution_layers.batch_norms[-1](data.x)
+            data.x = self.convolution_layers.dropout(data.x)
+            return data, data.x, data.edge_index, data.edge_attr, None # no unpooling info
+            
     def pool(self, data: Data):
         if self.batch_index is None and data.batch is None:
             self.batch_index = torch.zeros(data.x.shape[0], dtype=torch.long)
@@ -67,12 +77,6 @@ class Encoder(torch.nn.Module):
                                                                                                                                        edge_index = data.edge_index, 
                                                                                                                                        edge_attr = data.edge_attr)
             self.unpool_info = self.perm
-
-        else:
-            self.pooled_x = data.x
-            self.pooled_edge_index = data.edge_index
-            self.pooled_edge_attr = data.edge_attr
-            self.batch_index = data.batch
 
     def reset_parameters(self):
         self.convolution_layers.reset_parameters()
