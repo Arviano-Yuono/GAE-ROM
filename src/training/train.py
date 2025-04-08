@@ -25,10 +25,10 @@ def train(model: GAE,
     # optimizer
     if config['optimizer']['type'] == 'Adam':
         from torch.optim.adam import Adam
-        optimizer = Adam(model.parameters(), lr=config['optimizer']['learning_rate'])
+        optimizer = Adam(model.parameters(), lr=config['optimizer']['learning_rate'], weight_decay=config['optimizer']['weight_decay'])
     elif config['optimizer']['type'] == 'AdamW':
         from torch.optim.adamw import AdamW
-        optimizer = AdamW(model.parameters(), lr=config['optimizer']['learning_rate'])
+        optimizer = AdamW(model.parameters(), lr=config['optimizer']['learning_rate'], weight_decay=config['optimizer']['weight_decay'])
     else:
         raise ValueError(f"Invalid optimizer: {config['optimizer']['type']}")
 
@@ -90,6 +90,8 @@ def train(model: GAE,
                     reconstruction_loss += F.mse_loss(input=out, target=target)
         loss_train = reconstruction_loss / len(train_loader)  # Average the loss
         loss_train.backward()
+        # Add gradient clipping
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         scheduler.step()
 
@@ -111,6 +113,9 @@ def train(model: GAE,
         train_history['train_loss'].append(loss_train.item())
 
         if i != 0 and i % config['print_train'] == 0:
-            print(f"Epoch {i+1}/{config['epochs']}, Loss: {loss_train.item()}")
+            if is_val:
+                print(f"Epoch {i+1}/{config['epochs']}, train_loss: {loss_train.item()}, val_loss: {loss_val.item()}")
+            else:
+                print(f"Epoch {i+1}/{config['epochs']}, train_loss: {loss_train.item()}")
     
     return train_history
