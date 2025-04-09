@@ -22,6 +22,26 @@ def train(model: GAE,
     
     torch.cuda.empty_cache()
     
+    model_config = model.config
+    model_name = f"""{model_config['encoder']['convolution_layers']['type']}_\
+        {model_config['encoder']['pool']['type']}_\
+            {model_config['encoder']['pool']['ratio']}_\
+                {model_config['encoder']['pool']['is_pooling']}"""
+    # loss
+    loss_fn = config['loss']['type']
+    if loss_fn == 'mse':
+        loss_fn = F.mse_loss
+    elif loss_fn == 'rmse':
+        loss_fn = lambda x, y: torch.sqrt(F.mse_loss(x, y))
+    elif loss_fn == 'l1_loss':
+        loss_fn = F.l1_loss
+    elif loss_fn == 'l2_loss':
+        loss_fn = F.l2_loss
+    elif loss_fn == 'smooth_l1_loss':
+        loss_fn = F.smooth_l1_loss 
+    else:
+        raise ValueError(f"Invalid loss function: {loss_fn}")
+    
     # optimizer
     if config['optimizer']['type'] == 'Adam':
         from torch.optim.adam import Adam
@@ -55,9 +75,9 @@ def train(model: GAE,
 
     for i in loop:
         # implement torch amp
+        reconstruction_loss = torch.tensor(0., device=device)
         if config['amp']:
             with torch.amp.autocast(device_type=device.type, dtype=torch.bfloat16):
-                reconstruction_loss = torch.tensor(0., device=device)
                 if single_batch:
                     batch = next(iter(train_loader))
                     batch = batch.to(device)
@@ -65,6 +85,8 @@ def train(model: GAE,
                     optimizer.zero_grad()
                     out, _ = model(batch)
                     reconstruction_loss += F.mse_loss(input=out, target=target)
+                    loss_train = reconstruction_loss
+                    loss_train.backward()
                 else:
                     for batch in train_loader:
                         batch = batch.to(device)
@@ -72,8 +94,9 @@ def train(model: GAE,
                         optimizer.zero_grad()
                         out, _ = model(batch)
                         reconstruction_loss += F.mse_loss(input=out, target=target)
+                    loss_train = reconstruction_loss / len(train_loader)  # Average the loss
+                    loss_train.backward()
         else:
-            reconstruction_loss = torch.tensor(0., device=device)
             if single_batch:
                 batch = next(iter(train_loader))
                 batch = batch.to(device)
@@ -81,6 +104,8 @@ def train(model: GAE,
                 optimizer.zero_grad()
                 out, _ = model(batch)
                 reconstruction_loss += F.mse_loss(input=out, target=target)
+                loss_train = reconstruction_loss
+                loss_train.backward()
             else:
                 for batch in train_loader:
                     batch = batch.to(device)
@@ -88,8 +113,8 @@ def train(model: GAE,
                     optimizer.zero_grad()
                     out, _ = model(batch)
                     reconstruction_loss += F.mse_loss(input=out, target=target)
-        loss_train = reconstruction_loss / len(train_loader)  # Average the loss
-        loss_train.backward()
+                loss_train = reconstruction_loss / len(train_loader)  # Average the loss
+                loss_train.backward()
         # Add gradient clipping
         # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -104,11 +129,11 @@ def train(model: GAE,
         if is_val:
             if loss_val.item() < best_loss and save_best_model:
                 best_loss = loss_val.item()
-                save_model(model, f'artifacts/{config["model_name"]}_best_model.pth')
+                save_model(model, f'artifacts/{model_name}_best_model.pth')
         else:
             if loss_train.item() < best_loss and save_best_model:
                 best_loss = loss_train.item()
-                save_model(model, f'artifacts/{config["model_name"]}_best_model.pth')
+                save_model(model, f'artifacts/{model_name}_best_model.pth')
         
         train_history['train_loss'].append(loss_train.item())
 
