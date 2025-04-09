@@ -43,7 +43,7 @@ class Encoder(torch.nn.Module):
 
         # Apply all but the last convolution layer
         for conv, norm in zip(self.convolution_layers.convs[:-1], self.convolution_layers.batch_norms[:-1]):
-            data.x = self.convolution_layers.act(conv(data.x, data.edge_index))
+            data.x = self.convolution_layers.act(conv(x = data.x, edge_index = data.edge_index))
             data.x = norm(data.x)
             data.x = self.convolution_layers.dropout(data.x)
 
@@ -57,13 +57,13 @@ class Encoder(torch.nn.Module):
             return data, pooled_x, self.pooled_edge_index, self.pooled_edge_attr, self.unpool_info # the data returned is the data before pooling
         else:
             data.x = self.convolution_layers.act(
-                self.convolution_layers.convs[-1](data.x, data.edge_index))
+                self.convolution_layers.convs[-1](x = data.x, edge_index = data.edge_index))
             data.x = self.convolution_layers.batch_norms[-1](data.x)
             data.x = self.convolution_layers.dropout(data.x)
             return data, data.x, data.edge_index, data.edge_attr, None # no unpooling info
             
     def pool(self, data: Data):
-        if self.batch_index is None and data.batch is None:
+        if self.batch_index is None or data.batch is None:
             self.batch_index = torch.zeros(data.x.shape[0], dtype=torch.long)
         else:
             self.batch_index = data.batch

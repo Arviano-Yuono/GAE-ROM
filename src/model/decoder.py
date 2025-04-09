@@ -40,7 +40,7 @@ class Decoder(torch.nn.Module):
         self.unpool_layer = unpool_layer
 
         pooled_x = self.convolution_layers.act(
-            self.convolution_layers.convs[0](pooled_x, pooled_edge_index))
+            self.convolution_layers.convs[0](x = pooled_x, edge_index = pooled_edge_index))
         pooled_x = self.convolution_layers.batch_norms[0](pooled_x)
         pooled_x = self.convolution_layers.dropout(pooled_x)
 
@@ -53,7 +53,7 @@ class Decoder(torch.nn.Module):
             gc.collect()
                 
         for conv, norm in zip(self.convolution_layers.convs[1:], self.convolution_layers.batch_norms[1:]):
-            data.x = self.convolution_layers.act(conv(data.x, data.edge_index))
+            data.x = self.convolution_layers.act(conv(x = data.x, edge_index = data.edge_index))
             data.x = norm(data.x)
             data.x = self.convolution_layers.dropout(data.x)
         return data

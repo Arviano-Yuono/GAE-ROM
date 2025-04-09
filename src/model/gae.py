@@ -15,9 +15,11 @@ class GAE(nn.Module):
         self.encoder = Encoder(self.config['encoder'])
         self.decoder = Decoder(self.config['decoder'])
         self.autoencoder = None
+        self.skip_proj = None # for skip connection
         self.is_autoencoder = self.config['autoencoder']['is_autoencoder']
 
     def forward(self, data: Data):
+        x_input = data.x.clone() # for skip connection
         data, pooled_x, pooled_edge_index, pooled_edge_attr, unpool_info = self.encoder(data)
         
         if self.autoencoder is None and self.is_autoencoder:
@@ -27,8 +29,6 @@ class GAE(nn.Module):
         if not self.is_autoencoder:
             latent_variables = None
             decoded_pooled_x = pooled_x
-            del pooled_x
-            gc.collect()
         else:
             latent_variables, decoded_pooled_x = self.autoencoder(pooled_x)
 
@@ -38,6 +38,14 @@ class GAE(nn.Module):
                             pooled_edge_attr = pooled_edge_attr, 
                             unpool_info = unpool_info, 
                             unpool_layer = self.encoder.pooling_layer)
+
+        # -- Global skip connection --
+        if self.skip_proj is None:
+            self.skip_proj = nn.Linear(x_input.shape[1], data.x.shape[1]).to(x_input.device)
+
+        projected_skip = self.skip_proj(x_input)
+        assert projected_skip.shape == data.x.shape
+        data.x = data.x + 0.1 * projected_skip
         return data.x, latent_variables
 
     def reset_parameters(self):
