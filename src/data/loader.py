@@ -23,7 +23,13 @@ class GraphDataset(Dataset):
         # load mesh
         self.points, self.triangles, self.areas = self.transform_mesh()
         self.cell_coordinates = self.compute_cell_center_coordinates()
-        self.edge_list, self.edge_weights, self.edge_features = self.compute_edge_features()
+        if self.config['with_edge_features']:
+            self.edge_list = self.calculate_edge_list()
+            self.edge_list, self.edge_weights, self.edge_features = self.compute_edge_features()
+        else:
+            self.edge_list = self.calculate_edge_list()
+            self.edge_weights = np.ones(self.edge_list.shape[1], dtype=np.float32)
+            self.edge_features = torch.zeros((0, 3), dtype=torch.float32)
         self.num_nodes = self.triangles.shape[0]
 
         # load data
@@ -40,11 +46,16 @@ class GraphDataset(Dataset):
         cell_velocities = self.compute_cell_center_velocities(velocities)
         cell_velocities = self.normalize_velocities(cell_velocities)
 
-        data = Data(x = torch.tensor(cell_velocities, dtype=torch.float32),
-                    pos = torch.tensor(self.cell_coordinates, dtype=torch.float32),
-                    edge_index = self.edge_list, 
-                    edge_attr = self.edge_features, 
-                    edge_weight = self.edge_weights)
+        if self.config['with_edge_features']:
+            data = Data(x = torch.tensor(cell_velocities, dtype=torch.float32),
+                        pos = torch.tensor(self.cell_coordinates, dtype=torch.float32),
+                        edge_index = torch.tensor(self.edge_list, dtype=torch.long),
+                        edge_attr = torch.tensor(self.edge_features, dtype=torch.float32), 
+                        edge_weight = torch.tensor(self.edge_weights, dtype=torch.float32))
+        else:
+            data = Data(x = torch.tensor(cell_velocities, dtype=torch.float32),
+                        pos = torch.tensor(self.cell_coordinates, dtype=torch.float32),
+                        edge_index = torch.tensor(self.edge_list, dtype=torch.long))
         return data
     
     def __len__(self):
@@ -78,10 +89,7 @@ class GraphDataset(Dataset):
     
     def calculate_edge_list(self):
         # calculate the edge list from the mesh triangles
-        mesh = self.load_mesh()
-        triangles = mesh.cells[2].data
-        
-        edge_to_faces = self.build_edge_to_faces(triangles)
+        edge_to_faces = self.build_edge_to_faces(self.triangles)
         edge_list = []
         for edge, face_indices in edge_to_faces.items():
             if len(face_indices) == 2:
@@ -152,10 +160,6 @@ class GraphDataset(Dataset):
         edge_distances = self.compute_edge_distances(edge_list)
         edge_features = torch.tensor(edge_distances, dtype=torch.float32)
         
-        # Convert to torch tensors and ensure correct types
-        edge_list = torch.tensor(edge_list, dtype=torch.long)
-        edge_weights = torch.tensor(edge_weights, dtype=torch.float32)
-        # edge_features = torch.tensor(edge_features, dtype=torch.float32)
         
         
         return edge_list, edge_weights, edge_features
