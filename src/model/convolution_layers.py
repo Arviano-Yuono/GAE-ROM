@@ -27,44 +27,42 @@ class ConvolutionLayers(nn.Module):
 
         self.convs = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
-        if self.config['type'] == 'GMMConv':
+        if self.config['type'] == 'GMM':
             for i, hidden_channel in enumerate(self.config['hidden_channels'][:-1]):
-                self.convs.append(gnn.GMMConv(in_channels=hidden_channel,  
+                self.convs.append(gnn.conv.GMMConv(in_channels=hidden_channel,  
                                             out_channels=self.config['hidden_channels'][i+1], 
                                             dim=self.config['dim'], 
                                             kernel_size=self.config['kernel_size'],
                                             dropout=self.config['dropout']))
                 self.batch_norms.append(nn.BatchNorm1d(self.config['hidden_channels'][i+1]))
 
-        elif self.config['type'] == 'GraphSAGE':
+        elif self.config['type'] == 'SAGE':
             for i, hidden_channel in enumerate(self.config['hidden_channels'][:-1]):
-                self.convs.append(gnn.GraphSAGE(in_channels=hidden_channel, 
-                                               hidden_channels=self.config['hidden_channels'][i+1],
-                                               dropout=self.config['dropout'],
-                                               num_layers=self.config['num_layers'],
-                                               out_channels=self.config['hidden_channels'][i+1]))
+                self.convs.append(gnn.conv.SAGEConv(in_channels=hidden_channel, 
+                                               out_channels=self.config['hidden_channels'][i+1],
+                                               normalize=False))
                 self.batch_norms.append(nn.BatchNorm1d(self.config['hidden_channels'][i+1]))
 
-        elif self.config['type'] == 'ChebConv':
+        elif self.config['type'] == 'Cheb':
             for i, hidden_channel in enumerate(self.config['hidden_channels'][:-1]):
                 self.convs.append(gnn.ChebConv(hidden_channel, 
                                              self.config['hidden_channels'][i+1], 
                                              K=self.config['K']))
                 self.batch_norms.append(nn.BatchNorm1d(self.config['hidden_channels'][i+1]))
 
-        elif self.config['type'] == 'GCNConv':
+        elif self.config['type'] == 'GCN':
             for i, hidden_channel in enumerate(self.config['hidden_channels'][:-1]):
-                self.convs.append(gnn.GCNConv(hidden_channel, 
+                self.convs.append(gnn.conv.GCNConv(hidden_channel, 
                                             self.config['hidden_channels'][i+1],
                                             normalize=False))
                 self.batch_norms.append(nn.BatchNorm1d(self.config['hidden_channels'][i+1]))
 
-        elif self.config['type'] == 'GATConv':
+        elif self.config['type'] == 'GAT':
             for i, hidden_channel in enumerate(self.config['hidden_channels'][:-1]):
                 out_dim = self.config['hidden_channels'][i+1]
                 is_last = (i == len(self.config['hidden_channels']) - 2)
                 if is_last or out_dim < self.config['head']:
-                    self.convs.append(gnn.GATv2Conv(
+                    self.convs.append(gnn.conv.GATv2Conv(
                         in_channels=hidden_channel,
                         out_channels=out_dim,
                         heads=1,
@@ -76,7 +74,7 @@ class ConvolutionLayers(nn.Module):
                         f"GAT: hidden_channels[{i+1}] = {out_dim} not divisible by head = {self.config['head']}"
 
                     out_per_head = out_dim // self.config['head']
-                    self.convs.append(gnn.GATv2Conv(
+                    self.convs.append(gnn.conv.GATv2Conv(
                         in_channels=hidden_channel,
                         out_channels=out_per_head,
                         heads=self.config['head'],
