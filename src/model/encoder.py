@@ -37,6 +37,23 @@ class Encoder(torch.nn.Module):
                         ratio=ratio
                     ))
 
+                elif self.pool_method == 'SAGPool':
+                    from torch_geometric.nn import SAGPooling
+
+                    if self.config['pool']['GNN_pool_type'] == 'GAT':
+                        from torch_geometric.nn.conv import GATConv
+                        self.pooling_layer.append(SAGPooling(
+                            in_channels=in_channels,
+                            ratio=ratio,
+                            GNN_pool_type=GATConv(
+                                in_channels=in_channels,
+                                out_channels=in_channels,
+                                heads=4,
+                                dropout=self.config['pool']['dropout']
+                            )
+                        ))
+                    else:
+                        raise ValueError(f"Invalid GNN pool type: {self.config['pool']['GNN_pool_type']}")
                 else:
                     raise ValueError(f"Invalid pool method: {self.pool_method}")
         else:
@@ -48,7 +65,6 @@ class Encoder(torch.nn.Module):
         if data.x is None:
             raise ValueError("Input data.x is None. Please ensure data has node features.")
 
-        # Apply all but the last convolution layer
         for conv, norm, pooling_layer in zip(self.convolution_layers.convs, self.convolution_layers.batch_norms, self.pooling_layer):
             data.x = self.convolution_layers.act(conv(x = data.x, edge_index = data.edge_index))
             data.x = norm(data.x)
@@ -56,10 +72,7 @@ class Encoder(torch.nn.Module):
             if self.is_pooling:
                 self.pool(data, pooling_layer) 
 
-        if self.is_pooling:
-            return data, data.x, self.pooled_edge_index, self.pooled_edge_attr, self.unpool_info # the data returned is the data before pooling
-        else:
-            return data, data.x, data.edge_index, data.edge_attr, None # no unpooling info
+        return data, data.x, data.edge_index, data.edge_attr, self.unpool_info # no unpooling info
             
     def pool(self, data: Data, pooling_layer):
         if self.batch_index is None or data.batch is None:
@@ -68,15 +81,17 @@ class Encoder(torch.nn.Module):
             self.batch_index = data.batch
 
         if self.pool_method == 'EdgePool':
-            self.pooled_x, self.pooled_edge_index, _, unpool_info = pooling_layer(data.x, data.edge_index, self.batch_index)
-            self.pooled_edge_attr = torch.tensor(GraphDataset.compute_edge_distances_static(data.pos, self.pooled_edge_index))
+            data.x, data.edge_index, _, unpool_info = pooling_layer(data.x, data.edge_index, self.batch_index)
+            data.edge_attr = torch.tensor(GraphDataset.compute_edge_distances_static(data.pos, data.edge_index))
             self.unpool_info.append(unpool_info)
 
         elif self.pool_method == 'TopKPool':
-            self.pooled_x, self.pooled_edge_index, self.pooled_edge_attr, self.batch_index, self.perm, self.score = pooling_layer(x = data.x, 
-                                                                                                                                       edge_index = data.edge_index, 
-                                                                                                                                       edge_attr = data.edge_attr)
+            data.x, data.edge_index, data.edge_attr, self.batch_index, self.perm, self.score = pooling_layer(x = data.x, edge_index = data.edge_index, edge_attr = data.edge_attr)
             self.unpool_info.append(self.perm)
+
+        elif self.pool_method == 'SAGPool':
+            data.x, data.edge_index, data.edge_attr, self.batch_index, _ = pooling_layer(x = data.x, edge_index = data.edge_index, edge_attr = data.edge_attr)
+            self.unpool_info.append(None)
 
     def reset_parameters(self):
         self.convolution_layers.reset_parameters()
