@@ -9,43 +9,45 @@ config:
   mesh_file: D:\TA\TA2\GAE-ROM\dataset\cylinder_vonkarman\Re200_cut\cylinder_D04
   variable: velocity # ['VELOCITY-X', 'VELOCITY-Y'] # based on SU2 output docs
   data_sample: 20 # number of data samples to use for training
-  normalization_method: zscore # ['zscore', 'magnitude']
+
+preprocessing:
+  normalization_method: zscore # ['zscore', 'magnitude', robust]
   with_edge_features: false
 
 conv_base: &conv_base
-  type: GATConv
+  type: SAGE # ['GAT', 'SAGE', 'Cheb', 'GCN']
   act: relu
   head: 4
-  dropout: 0.1
+  dropout: 0
   kernel_size: 5
   K: 3
   dim: 2
   num_layers: 5
 
+pooling_status: &pooling_status false
 pool_base: &pool_base
   type: EdgePool
-  in_channels: 1
-  is_pooling: false
+  in_channels: [2,16,16]
   dropout: 0.1
+  ratio: [0.5, 0.9, 0.9]
 
 model:
   encoder:
-    act: relu
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [2,1,1,1] # 2 is the input channels (velocity x,y)
+      hidden_channels: [2,16,16,16] # 2 is the input channels (velocity x,y)
     pool: 
       <<: *pool_base
+      is_pooling: *pooling_status
       ratio: 0.5
 
   decoder:
-    act: relu
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [1,1,1,2]
+      hidden_channels: [16,16,16,2]
     unpool:
       <<: *pool_base
-      is_unpooling: *pool_base.is_pooling
+      is_unpooling: *pooling_status
 
   autoencoder:
     is_autoencoder: false

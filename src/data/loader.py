@@ -23,7 +23,7 @@ class GraphDataset(Dataset):
         # load mesh
         self.points, self.triangles, self.areas = self.transform_mesh()
         self.cell_coordinates = self.compute_cell_center_coordinates()
-        if self.config['with_edge_features']:
+        if self.config['preprocessing']['with_edge_features']:
             self.edge_list = self.calculate_edge_list()
             self.edge_list, self.edge_weights, self.edge_features = self.compute_edge_features()
         else:
@@ -46,7 +46,7 @@ class GraphDataset(Dataset):
         cell_velocities = self.compute_cell_center_velocities(velocities)
         cell_velocities = self.normalize_velocities(cell_velocities)
 
-        if self.config['with_edge_features']:
+        if self.config['preprocessing']['with_edge_features']:
             data = Data(x = torch.tensor(cell_velocities, dtype=torch.float32),
                         pos = torch.tensor(self.cell_coordinates, dtype=torch.float32),
                         edge_index = torch.tensor(self.edge_list, dtype=torch.long),
@@ -63,7 +63,7 @@ class GraphDataset(Dataset):
     
     def normalize_velocities(self, cell_velocities):
         # Get normalization method from config
-        norm_method = self.config.get('normalization_method', 'zscore')  # default to zscore
+        norm_method = self.config['preprocessing']['normalization_method']  # default to zscore
         
         if norm_method == 'zscore':
             # Original z-score normalization
@@ -77,6 +77,14 @@ class GraphDataset(Dataset):
             velocity_magnitude = np.sqrt(np.sum(cell_velocities**2, axis=1))
             max_magnitude = np.max(velocity_magnitude)
             cell_velocities = cell_velocities / max_magnitude
+
+        elif norm_method == 'robust':
+            # Robust normalization using IQR
+            q1 = np.percentile(cell_velocities, 25, axis=0)
+            q3 = np.percentile(cell_velocities, 75, axis=0)
+            iqr = q3 - q1
+            median_velocities = np.median(cell_velocities, axis=0)
+            cell_velocities = (cell_velocities - median_velocities) / iqr
             
         else:
             raise ValueError(f"Unknown normalization method: {norm_method}")
