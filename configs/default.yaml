@@ -12,25 +12,40 @@ config:
   normalization_method: zscore # ['zscore', 'magnitude']
   with_edge_features: false
 
+conv_base: &conv_base
+  type: GATConv
+  act: relu
+  head: 4
+  dropout: 0.1
+  kernel_size: 5
+  K: 3
+  dim: 2
+  num_layers: 5
+
+pool_base: &pool_base
+  type: EdgePool
+  in_channels: 1
+  is_pooling: false
+  dropout: 0.1
+
 model:
   encoder:
     act: relu
     convolution_layers:
-      type: GATConv  # [GMMConv, ChebConv, GCNConv, GATConv] so far chebconv is the only one that works
-      hidden_channels: [2, 64, 128, 128, 64, 32] # 2 is the input channels (velocity x,y)
-      act: relu
-      head: 4
-      dropout: 0.1 # probability
-      num_layers: 5
-      kernel_size: 5
-      K: 3
-      dim: 2
-    pool:
-      is_pooling: true
-      type: EdgePool
-      in_channels: 64
+      <<: *conv_base
+      hidden_channels: [2,1,1,1] # 2 is the input channels (velocity x,y)
+    pool: 
+      <<: *pool_base
       ratio: 0.5
-      dropout: 0.1
+
+  decoder:
+    act: relu
+    convolution_layers:
+      <<: *conv_base
+      hidden_channels: [1,1,1,2]
+    unpool:
+      <<: *pool_base
+      is_unpooling: *pool_base.is_pooling
 
   autoencoder:
     is_autoencoder: false
@@ -40,23 +55,6 @@ model:
     act: relu
     dropout: 0 # probability
 
-  decoder:
-    act: relu
-    convolution_layers:
-      type: GATConv  # [GMMConv, ChebConv, GCNConv, GATConv] so far chebconv is the only one that works
-      hidden_channels: [32, 64, 128, 128, 64 , 2]
-      act: relu
-      num_layers: 5
-      head: 4
-      dropout: 0 # probability
-      kernel_size: 5
-      K: 3
-      dim: 2
-    unpool:
-      is_unpooling: true
-      type: EdgePool
-      dropout: 0.1
-
 training:
   model_name: GAE_reduced
   num_workers: 0
@@ -64,7 +62,7 @@ training:
   batch_size: 1
   print_train: 1
   amp: false
-  single_batch_run: false
+  single_batch_run: true
   save_best_model: true
   optimizer:
     type: AdamW
