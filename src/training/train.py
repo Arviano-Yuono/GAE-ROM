@@ -66,7 +66,6 @@ def train(model: GAE,
     best_loss = float('inf')
     loss_val = None
     # training loop
-    model.train()
 
     if is_tqdm:
         loop = tqdm.tqdm(range(config['epochs']))
@@ -74,55 +73,38 @@ def train(model: GAE,
         loop = range(config['epochs'])
 
     for i in loop:
+        model.train()
         # implement torch amp
         reconstruction_loss = torch.tensor(0., device=device)
-        if config['amp']:
-            with torch.amp.autocast(device_type=device.type, dtype=torch.bfloat16):
-                if single_batch:
-                    batch = next(iter(train_loader))
+        loss_train = 0
+        train_loss_cumulative = 0
+        total_batches = 0
+        for batch in train_loader:
+            optimizer.zero_grad()
+            if config['amp']:
+                with torch.amp.autocast(device_type=device.type, dtype=torch.bfloat16):
                     batch = batch.to(device)
-                    target = batch.x
-                    optimizer.zero_grad()
+                    target = batch.x.float()
+                    batch.x = batch.x.float()
                     out, _ = model(batch)
-                    reconstruction_loss += F.mse_loss(input=out, target=target)
-                    loss_train = reconstruction_loss
-                    loss_train.backward()
-                else:
-                    for batch in train_loader:
-                        batch = batch.to(device)
-                        target = batch.x
-                        optimizer.zero_grad()
-                        out, _ = model(batch)
-                        reconstruction_loss += F.mse_loss(input=out, target=target)
-                    loss_train = reconstruction_loss / len(train_loader)  # Average the loss
-                    loss_train.backward()
-        else:
-            if single_batch:
-                batch = next(iter(train_loader))
-                batch = batch.to(device)
-                target = batch.x
-                optimizer.zero_grad()
-                out, _ = model(batch)
-                reconstruction_loss += F.mse_loss(input=out, target=target)
-                loss_train = reconstruction_loss
-                loss_train.backward()
+                out = out.to(torch.float64)
             else:
-                for batch in train_loader:
-                    batch = batch.to(device)
-                    target = batch.x
-                    optimizer.zero_grad()
-                    out, _ = model(batch)
-                    reconstruction_loss += F.mse_loss(input=out, target=target)
-                loss_train = reconstruction_loss / len(train_loader)  # Average the loss
-                loss_train.backward()
+                batch = batch.to(device)
+                target = batch.x.float()
+                batch.x = batch.x.float()
+                out, _ = model(batch)
+            reconstruction_loss = F.mse_loss(input=out, target=target)
+            reconstruction_loss.backward()
+            optimizer.step()
+            scheduler.step()
+            train_loss_cumulative += reconstruction_loss.item()
+            total_batches += 1 * config['batch_size']
+        loss_train = torch.tensor(train_loss_cumulative / total_batches, device=device)  # Convert to tensor
         # Add gradient clipping
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
-        scheduler.step()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         if is_val:
             loss_val = val(model, device, val_loader)
-            model.train()
             train_history['val_loss'].append(loss_val.item())
 
         # save best model
@@ -137,7 +119,7 @@ def train(model: GAE,
         
         train_history['train_loss'].append(loss_train.item())
 
-        if i != 0 and i % config['print_train'] == 0:
+        if i % config['print_train'] == 0:
             if is_val:
                 print(f"Epoch {i+1}/{config['epochs']}, train_loss: {loss_train.item()}, val_loss: {loss_val.item()}")
             else:
