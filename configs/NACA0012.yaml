@@ -1,30 +1,24 @@
 config:
-  name: GAT_pool_128_ae
+  name: gca_rom_NACA0012
   seed: 42
   device: cuda
   root_dir: ./ # project root dir
-  dataset_dir: ./dataset/cylinder_vonkarman/Re200_cut/flow # dataset dir
-  split_dir: ./dataset/cylinder_vonkarman/Re200_cut/flow_split # split dir
+  dataset_dir: ./dataset/rans_naca0012/incompressible/flow # dataset dir
+  split_dir: ./dataset/rans_naca0012/incompressible/flow_split # split dir
   output_dir: ./output/ # output dir
-  # mesh_file: D:\TA\TA2\GAE-ROM\dataset\cylinder_vonkarman\Re200_cut\cylinder_D0.4.su2
-  mesh_file: D:\TA\TA2\GAE-ROM\dataset\cylinder_vonkarman\cylinder_D0.4.su2
-  variable: velocity # ['VELOCITY-X', 'VELOCITY-Y'] # based on SU2 output docs
-  data_sample: 1000 # number of data samples to use for training
-  variable_scaling: true
-  scaler_name: standard
-  inverse_scaling: true
-  dim_pde: 1
-  variable: X
+  mesh_file: D:\TA\TA2\GAE-ROM\dataset\rans_naca0012\n0012_897-257.su2
+  variable: VX # ['VELOCITY-X', 'VELOCITY-Y'] # based on SU2 output docs
+  data_sample: 20 # number of data samples to use for training
 
 preprocessing:
   normalization_method: zscore # ['zscore', 'magnitude', robust]
-  with_edge_features: true
+  with_edge_features: false
 
 conv_base: &conv_base
-  type: GAT
+  type: SAGE # ['GAT', 'SAGE', 'Cheb', 'GCN']
   act: relu
   head: 4
-  dropout: 0.1
+  dropout: 0
   kernel_size: 5
   K: 3
   dim: 2
@@ -33,7 +27,7 @@ conv_base: &conv_base
 pooling_status: &pooling_status false
 pool_base: &pool_base
   type: EdgePool
-  in_channels: [1,16,16]
+  in_channels: [2,16,16]
   dropout: 0.1
   ratio: [0.5, 0.9, 0.9]
   GNN_pool_type: GAT
@@ -42,7 +36,7 @@ model:
   encoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [1,16,32,16]
+      hidden_channels: [2,16,16,16] # 2 is the input channels (velocity x,y)
     pool: 
       <<: *pool_base
       is_pooling: *pooling_status
@@ -51,13 +45,13 @@ model:
   decoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [16,32,16,1]
+      hidden_channels: [16,16,16,2]
     unpool:
       <<: *pool_base
       is_unpooling: *pooling_status
 
   autoencoder:
-    is_autoencoder: true
+    is_autoencoder: false
     encoder_layers: [1024, 256, 64]
     decoder_layers: [64, 256, 1024]
     latent_dim: 10
@@ -68,20 +62,20 @@ training:
   model_name: GAE_reduced
   num_workers: 0
   epochs: 100
-  batch_size: 8
+  batch_size: 1
   print_train: 1
   amp: false
-  single_batch_run: false
+  single_batch_run: true
   save_best_model: true
   optimizer:
     type: AdamW
-    learning_rate: 0.0005
-    weight_decay: 0.0001
+    learning_rate: 0.01
+    weight_decay: 0.00001
 
   scheduler:
-    type: CosineAnnealingLR
-    T_max: 100
-    eta_min: 0.00001
+    type: StepLR # [StepLR, CosineAnnealingLR]
+    step_size: 5
+    gamma: 0.1
 
   early_stopping:
     early_stopping: 10
