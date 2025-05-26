@@ -7,7 +7,6 @@ class ConvolutionLayers(nn.Module):
     def __init__(self, config):
         super(ConvolutionLayers, self).__init__()
         self.config = config
-
         if self.config['act'] == 'relu':
             self.act = F.relu
         elif self.config['act'] == 'elu':

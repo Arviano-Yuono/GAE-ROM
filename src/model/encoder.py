@@ -64,9 +64,12 @@ class Encoder(torch.nn.Module):
     def forward(self, data: Data):
         if data.x is None:
             raise ValueError("Input data.x is None. Please ensure data has node features.")
-
         for conv, norm, pooling_layer in zip(self.convolution_layers.convs, self.convolution_layers.batch_norms, self.pooling_layer):
-            data.x = self.convolution_layers.act(conv(x = data.x, edge_index = data.edge_index))
+            # check if conv take edge_attr as input
+            if hasattr(conv, 'edge_conv'):
+                data.x = self.convolution_layers.act(conv(x = data.x, edge_index = data.edge_index, edge_attr = data.edge_attr))
+            else:
+                data.x = self.convolution_layers.act(conv(x = data.x, edge_index = data.edge_index))
             data.x = norm(data.x)
             data.x = self.convolution_layers.dropout(data.x)
             if self.is_pooling:
