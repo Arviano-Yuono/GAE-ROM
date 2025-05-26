@@ -10,6 +10,7 @@ def split_dataset(data_dir,
                   shuffle=True,
                   seed=42,
                   sample_size=None,
+                  test_split = True,
                   overwrite=False):
     """
     Split the dataset into training, validation, and test sets.
@@ -47,7 +48,10 @@ def split_dataset(data_dir,
 
     train_files = list_files[:train_num]
     val_files = list_files[train_num:train_num+val_num]
-    test_files = list_files[train_num+val_num:]
+    if test_split:
+        test_files = list_files[train_num+val_num:]
+    else:
+        test_files = []
 
     train_dir = os.path.join(split_dir, 'train')
     val_dir = os.path.join(split_dir, 'val')
