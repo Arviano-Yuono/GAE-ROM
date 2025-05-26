@@ -1,0 +1,105 @@
+
+------- Params for NS-VX --------
+PDE:
+    case 4:
+        problem_name = "navier_stokes"
+        variable = 'VX'
+        mu1 = np.linspace(0.5, 2., 21)[::2]
+        mu2 = np.linspace(2., 0.5, 151)[::5]
+        mu_space = [mu1, mu2]
+        n_param = 2
+        dim_pde = 2
+        n_comp = 1
+Hyperparams:
+    {'net_name': 'navier_stokes',
+    'variable': 'VX',
+    'scaling_type': 4,
+    'scaler_number': 3,
+    'scaler_name': 'standard',
+    'skip': 1,
+    'rate': 10,
+    'sparse_method': 'L1_mean',
+    'ffn': 200,
+    'nodes': 100,
+    'bottleneck_dim': 25,
+    'lambda_map': 1.0,
+    'in_channels': 3,
+    'seed': 10,
+    'tolerance': 1e-06,
+    'learning_rate': 0.001,
+    'map_act': 'tanh',
+    'layer_vec': [2, 100, 100, 100, 100, 25],
+    'net_run': '_standard',
+    'weight_decay': 1e-05,
+    'max_epochs': 5000,
+    'comp': 1,
+    'hidden_channels': [1, 1, 1],
+    'miles': [],
+    'gamma': 0.0001,
+    'num_nodes': 0,
+    'conv': 'GMMConv',
+    'ae_act': 'elu',
+    'batch_size': inf,
+    'minibatch': False,
+    'net_dir': './navier_stokes/_standard/VX_navier_stokes_lmap1.0_btt25_seed10_lv4_hc3_nd100_ffn200_skip1_lr0.001_sc4_rate10_convGMMConv/',
+    'cross_validation': True}
+
+DATA:
+    the dataset variations are based on the parameters (i.e. mu_1 (inlet width) and mu_2(kinematic viscosity of the fluid)), 
+    since there are 11 and 31 variations of mu_1 and mu_2 for the NS case, therefore there are 341 snapshots of graph
+    - dataset attributes:
+        # xx : x coordinates of the nodes
+        # yy : y coordinates of the nodes
+        # U : velocity field
+        # E : edge index
+    - graph data
+        - pos: (x,y) is not the same for all snapshot
+        - node_features : the velocity at that certain node (VX, VX, or [VX, VY])
+        - edge attr : absolute relative position (x,y) between nodes
+                ei = torch.index_select(pos, 0, edge_index[0, :])
+                ej = torch.index_select(pos, 0, edge_index[1, :])
+                edge_attr = torch.abs(ej - ei)
+        - edge weight : 
+                vector manitude of the edge_attr
+                edge_weight = torch.sqrt(torch.pow(edge_attr[:, 0], 2) + torch.pow(edge_attr[:, 1], 2)).unsqueeze(1)
+
+
+PREPROCESSING:
+    SPLIT:
+    ## IMPORTANT: using TEST = VAL
+        biasa aja, buat list urutan, shuffle, split untuk train and test.
+            train_dataset = [graphs[i] for i in train_snapshots]
+            test_dataset = [graphs[i] for i in test_snapshots]
+
+    SCALING:
+    ## IMPORTANT: scalling dilakuin sebelum splitting, jadi kayanya bakal ada data leakage dari test ke train
+        - name: Standard scaler (maybe in our case try to use more robust methods, i.e. IQR)
+        - type: SAMPLE-FEATURE SCALING
+        So basically we're doing double normalization ton the whole graph dataset. think like we have a table with the shape of [num_nodes, num_params/snapshots] that
+        holds the velocity vector (VX, VY, or [VX, VY]) then we first normalize the VX at each row (snapshot-wise scalling), then we transpose the
+        table then normalize it again (now it's normalizing the VX of each node graph-wise, normalizing the VX to the whole graph at a certain snapshot)
+
+        DOCS(sklearn.preprocessing):
+            fit(X, y=None, sample_weight=None)[source]
+            Compute the mean and std to be used for later scaling.
+
+            Parameters:
+                X:{array-like, sparse matrix} of shape (n_samples, n_features)
+                The data used to compute the mean and standard deviation used for later scaling along the features axis.
+
+                y:None
+                Ignored.
+
+                sample_weight:array-like of shape (n_samples,), default=None
+            Individual weights for each sample.
+
+            Added in version 0.24: parameter sample_weight support to StandardScaler.
+
+            Returns:
+                self: object
+                    Fitted scaler.
+
+ MODEL:
+    They split the model into two steps, first there is the model block, such as encoder and decoder for the GCA and then there is network module, 
+    that would assemble the GCA into a working model. The encoder and decoder will take actual inputs while the network module will take
+    the Hyperparams dictionary as the input.
