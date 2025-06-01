@@ -1,5 +1,6 @@
 .venv/
 dataset/*
+output/*
 artifacts/
 **/__pycache__/
 __pycache__/
