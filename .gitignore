@@ -2,6 +2,7 @@
 dataset/*
 output/*
 artifacts/
+test_AirFRans.ipynb
 **/__pycache__/
 __pycache__/
 **.pyc
