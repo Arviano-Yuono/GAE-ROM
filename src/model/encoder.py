@@ -6,9 +6,9 @@ from src.data.loader import GraphDataset
 
 config = commons.get_config('configs/default.yaml')['model']['encoder']
 
-class Encoder(torch.nn.Module):
+class GraphEncoder(torch.nn.Module):
     def __init__(self, config = config):
-        super(Encoder, self).__init__()
+        super(GraphEncoder, self).__init__()
         self.config = config
         #conv layers
         self.convolution_layers = ConvolutionLayers(config['convolution_layers'])

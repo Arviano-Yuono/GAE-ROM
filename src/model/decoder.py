@@ -6,9 +6,9 @@ from src.utils import commons
 
 config = commons.get_config('configs/default.yaml')['model']['decoder']
 
-class Decoder(torch.nn.Module):
+class GraphDecoder(torch.nn.Module):
     def __init__(self, config = config):
-        super(Decoder, self).__init__()
+        super(GraphDecoder, self).__init__()
         self.config = config
         #conv layers
         self.convolution_layers = ConvolutionLayers(config['convolution_layers'])

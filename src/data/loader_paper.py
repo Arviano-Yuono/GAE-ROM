@@ -15,37 +15,39 @@ class GraphDatasetPaper(Dataset):
         self.config = config
         self.dataset_dir = config['dataset_dir']
         self.variable = config['variable']
-        self.mesh_file = config['mesh_file']
         self.variable = config['variable']
         self.dim_pde = config['dim_pde']
 
         # load data
         self.h5_file = h5py.File(os.path.join(config['split_dir'], f'{split}.h5'), 'r')
-        self.file_keys = list(self.h5_file.keys())[2:] # remove the first 2 keys which are coordinates and edge_index
+        self.file_keys = list(self.h5_file.keys()) # remove the first 2 keys which are coordinates and edge_index
         self.file_length = len(self.file_keys)  # Set file_length to match actual number of data samples
-
-        # load coordinates
-        self.coordinates = self.h5_file['coordinates'][:] # Convert to NumPy array
-        self.num_nodes = self.coordinates.shape[0]
-
-        # get edge attr and weights
-        self.edge_list = self.h5_file['edge_index'][:] # Convert to NumPy array
-        self.edge_features = self.compute_edge_attr(self.edge_list)
-        self.edge_weights = self.compute_edge_weights(self.edge_features)
+        self.file_index = sorted([int(key.split('_')[1]) for key in self.file_keys])
+        self.num_graphs = self.h5_file[self.file_keys[0]]['coordinates'].shape[0]
 
     def __del__(self):
         if hasattr(self, 'h5_file'):
             self.h5_file.close()
 
     def __getitem__(self, index):
+        # load coordinates
+        file_key = self.file_keys[0].split('_')[0] + '_' + str(self.file_index[index])
+        # print(f"Loading coordinates for {file_key}")
+        self.coordinates = self.h5_file[file_key]['coordinates'][:] # Convert to NumPy array
+        self.num_nodes = self.coordinates.shape[0]
+
+        # get edge attr and weights
+        self.edge_list = self.h5_file[file_key]['edge_index'][:] # Convert to NumPy array
+        self.edge_features = self.compute_edge_attr(self.edge_list)
+        self.edge_weights = self.compute_edge_weights(self.edge_features)
         #Load velicities
         # print(f"Loading velocities for index {index} out of {len(self.file_keys)}")
         velocities = None # Initialize velocities
         if self.dim_pde == 1:
             if self.variable == 'X':
-                velocities = self.h5_file[self.file_keys[index]]['Ux'][:] # Convert to NumPy array
+                velocities = self.h5_file[file_key]['Ux'][:] # Convert to NumPy array
             elif self.variable == 'Y':
-                velocities = self.h5_file[self.file_keys[index]]['Uy'][:] # Convert to NumPy array
+                velocities = self.h5_file[file_key]['Uy'][:] # Convert to NumPy array
         elif self.dim_pde == 2:
             print("dim_pde = 2 is not yet implemented")
             return None, None
@@ -53,7 +55,7 @@ class GraphDatasetPaper(Dataset):
         #scale velocities
         if velocities is None:
             raise ValueError("Velocities are not loaded, cannot scale.")
-        velocities, scaler = self.scale_velocities(velocities)
+        # velocities, scaler = self.scale_velocities(velocities)
 
         data = Data(x = torch.tensor(velocities, dtype=torch.float64).float(),
                     pos = torch.tensor(self.coordinates, dtype=torch.float64),

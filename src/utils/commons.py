@@ -7,15 +7,23 @@ import random
 import os
 import logging
 import yaml
-
+import torch.nn.functional as F
 
 def set_seed(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
     np.random.seed(seed)
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
+
+def get_activation(act_name: str):
+    return getattr(torch.nn, act_name)()
+
+def get_activation_function(act_name: str):
+    return getattr(F, act_name.lower())
 
 
 def get_device():
@@ -47,6 +55,17 @@ def save_model(model: torch.nn.Module, save_path: str):
         'config': model.config,
     }
     torch.save(state, save_path)
+
+
+def is_scheduler_per_batch(scheduler):
+    if scheduler is None:
+        return False
+    if (isinstance(scheduler, torch.optim.lr_scheduler.CyclicLR)
+        or isinstance(scheduler, torch.optim.lr_scheduler.CosineAnnealingWarmRestarts)
+        or isinstance(scheduler, torch.optim.lr_scheduler.OneCycleLR)):
+        return True
+    else:
+        return False
 
 
 def load_model(save_path: str):
