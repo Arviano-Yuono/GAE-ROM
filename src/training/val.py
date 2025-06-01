@@ -8,7 +8,8 @@ config = get_config('configs/default.yaml')['training']
 def val(model, 
         device: torch.device, 
         params: torch.Tensor,
-        val_loader: torch_geometric.loader.DataLoader):
+        val_loader: torch_geometric.loader.DataLoader, 
+        lambda_map: float = 1):
     model.eval()
     total_reconstruction_loss = 0
     total_map_loss = 0
@@ -35,7 +36,7 @@ def val(model,
         if latent_var is not None and est_latent_var is not None:
             avg_map_loss = total_map_loss / len(val_loader.dataset)
             # Combine losses with weight factor
-            total_loss = avg_reconstruction_loss + config['lambda_map'] * avg_map_loss
+            total_loss = avg_reconstruction_loss + lambda_map * avg_map_loss
         else:
             total_loss = avg_reconstruction_loss
 

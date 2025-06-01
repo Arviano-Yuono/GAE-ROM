@@ -134,7 +134,7 @@ def train(model: GAE,
         if is_val:
             val_trajectories = val_loader.dataset.file_index
             val_params = params[val_trajectories]
-            loss_val = val(model, device, val_params, val_loader)
+            loss_val = val(model, device, val_params, val_loader, config['lambda_map'])
             train_history['val_loss'].append(loss_val.item())
             # save best model
             if loss_val.item() < best_loss and save_best_model:
