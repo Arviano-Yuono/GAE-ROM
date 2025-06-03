@@ -35,17 +35,53 @@ def write_single_h5_file(output_h5_path, trajectories_to_write,
             
             velocities_for_traj = all_scaled_velocities_map[traj_num] # Should be [num_nodes, 2]
             g['Ux'] = velocities_for_traj[:, 0].numpy() # Convert to numpy for h5py
-            g['Uy'] = velocities_for_traj[:, 1].numpy() # Convert to numpy for h5py
+
+def rename_vtu_files(sorted_files, input_directory):
+    """
+    Rename VTU files to configuration_1.vtu, configuration_2.vtu, etc. based on their order in the sorted list.
+    
+    Args:
+        sorted_files (list): List of sorted VTU filenames
+        input_directory (str): Directory containing the VTU files
+    
+    Returns:
+        list: List of new filenames in the order they were renamed
+    """
+    new_filenames = []
+    
+    for idx, old_filename in enumerate(sorted_files, 1):
+        new_filename = f"configuration_{idx}.vtu"
+        old_path = os.path.join(input_directory, old_filename)
+        new_path = os.path.join(input_directory, new_filename)
+        
+        try:
+            # Check if the new filename already exists
+            if os.path.exists(new_path):
+                print(f"Warning: {new_filename} already exists. Skipping rename.")
+                continue
+                
+            # Rename the file
+            os.rename(old_path, new_path)
+            new_filenames.append(new_filename)
+            #delete the old file
+            print(f"Renamed {old_filename} to {new_filename}")
+            os.remove(old_path)
+            
+        except Exception as e:
+            print(f"Error renaming {old_filename}: {e}")
+            continue
+    
+    return new_filenames
 
 def vtu_to_h5(vtu_file_directory, 
               output_h5_dir, # Directory to save train.h5, val.h5, and scaler.pkl
               vtu_array_name='Velocity', # Name of the velocity array in VTU files
-              train_ratio=0.8, 
+              train_ratio=0.9, 
               scaling_type=4, 
-              scaler_name='standard', 
-              edge_index=None, # Assumed to be constant for the dataset
+              scaler_name='standard',
+              sorted_vtu_files=None,
               overwrite=False):
-
+    edge_index = None
     train_h5_path = os.path.join(output_h5_dir, 'train.h5')
     val_h5_path = os.path.join(output_h5_dir, 'val.h5')
     scaler_path = os.path.join(output_h5_dir, 'scaler.pkl')
@@ -81,29 +117,23 @@ def vtu_to_h5(vtu_file_directory,
 
             traj_num = int(traj_num_str)
             
-            grid = pv.read(os.path.join(vtu_file_directory, vtu_file))
+            grid = pv.UnstructuredGrid(os.path.join(vtu_file_directory, vtu_file))
             if grid is None or grid.points is None or vtu_array_name not in grid.point_data:
                  print(f"Warning: Failed to read {vtu_file} correctly or missing data. Skipping.")
                  continue
 
+            #coordinates
             coordinates = np.array(grid.points[:, 0:2], dtype=np.float32) 
             
+            if edge_index is None:
+            #edge index
+                edges = grid.extract_all_edges()
+                edge_points = edges.lines.reshape(-1, 3)[1:] # Skip first element which is line count
+                edge_index = edge_points[:,1:].reshape(2, -1)
+            
+            #velocity
             raw_velocities = np.array(grid.point_data[vtu_array_name], dtype=np.float32)
-            if raw_velocities.ndim == 1: # Case of single component array per node
-                if raw_velocities.shape[0] == coordinates.shape[0] * 2 : # Might be flattened UxUyUxUy
-                    velocities_2d = raw_velocities.reshape(coordinates.shape[0], 2)
-                else: # Assume it's a single component (e.g. pressure, or Ux only)
-                     print(f"Warning: Velocity array in {vtu_file} is 1D with unexpected shape {raw_velocities.shape}. Trying to use as single component.")
-                     velocities_2d = raw_velocities.reshape(-1,1) # Reshape to [N,1]
-            elif raw_velocities.shape[1] == 3: # [N, 3] for (vx, vy, vz)
-                velocities_2d = raw_velocities[:, 0:2]
-            elif raw_velocities.shape[1] == 2: # [N, 2] for (vx, vy)
-                velocities_2d = raw_velocities
-            elif raw_velocities.shape[1] == 1: # [N, 1] e.g. Ux only
-                velocities_2d = raw_velocities
-            else:
-                print(f"Warning: Unexpected velocity shape {raw_velocities.shape} in {vtu_file}. Expected 1, 2 or 3 components. Skipping.")
-                continue
+            velocities_2d = raw_velocities[:, 0:1]
             
             # Check for consistent number of nodes
             if trajectory_numbers and coordinates.shape[0] != all_trajectory_data_raw[trajectory_numbers[0]]['coordinates'].shape[0]:
@@ -113,6 +143,7 @@ def vtu_to_h5(vtu_file_directory,
             trajectory_numbers.append(traj_num)
             all_trajectory_data_raw[traj_num] = {
                 'coordinates': coordinates,
+                'edge_index': edge_index,
                 'velocities': torch.tensor(velocities_2d, dtype=torch.float32)
             }
         except Exception as e:
@@ -179,6 +210,7 @@ def vtu_to_h5(vtu_file_directory,
         with open(scaler_path, 'wb') as f_scaler:
             pickle.dump(scaler, f_scaler)
         print(f"Scaler saved to {scaler_path}")
+
 
     # Prepare data maps for writing (maps trajectory number to its data)
     all_scaled_velocities_map = {tn: scaled_all_velocities_tensor[trajectory_numbers.index(tn)] for tn in trajectory_numbers}

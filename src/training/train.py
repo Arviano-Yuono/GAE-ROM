@@ -23,13 +23,10 @@ def train(model: GAE,
     
     torch.cuda.empty_cache()
     train_trajectories = train_loader.dataset.file_index
-    train_params = params[train_trajectories]
+    train_params = params[train_trajectories].to(device)
 
     model_config = model.config
-    model_name = f"""{model_config['encoder']['convolution_layers']['type']}_\
-        {model_config['encoder']['pool']['type']}_\
-            {model_config['encoder']['pool']['ratio']}_\
-                {model_config['encoder']['pool']['is_pooling']}"""
+    model_name = f"""{model_config['encoder']['convolution_layers']['type']}"""
     # loss
     loss_fn = config['loss']['type']
     if loss_fn == 'rmse':
@@ -84,20 +81,21 @@ def train(model: GAE,
         start_ind = 0
         for batch in train_loader:
             optimizer.zero_grad()
+            # Move batch to device and ensure correct data type
+            batch = batch.to(device)
+            target = batch.x.float()
+            batch.x = batch.x.float()
+            
+            # Get current batch parameters
+            current_params = train_params[start_ind:start_ind+batch.batch_size]
+            
             if config['amp']:
-                with torch.amp.autocast(device_type=device.type, dtype=torch.bfloat16):
-                    batch = batch.to(device)
-                    target = batch.x.float()
-                    batch.x = batch.x.float()
-                    out, latent_var, est_latent_var = model(batch, train_params[start_ind:start_ind+batch.batch_size])
-                    start_ind += batch.batch_size
-                out = out.to(torch.float64)
+                with torch.amp.autocast(device_type=device.type, dtype=torch.float16):
+                    out, latent_var, est_latent_var = model(batch, current_params)
             else:
-                batch = batch.to(device)
-                target = batch.x.float()
-                batch.x = batch.x.float()
-                out, latent_var, est_latent_var = model(batch, train_params[start_ind:start_ind+batch.batch_size])
-                start_ind += batch.batch_size
+                out, latent_var, est_latent_var = model(batch, current_params)
+            
+            start_ind += batch.batch_size
 
             # Calculate reconstruction loss
             reconstruction_loss = F.mse_loss(input=out, target=target)
@@ -148,10 +146,18 @@ def train(model: GAE,
         train_history['train_loss'].append(loss_train.item())
         train_history['map_loss'].append(map_loss_avg.item())
 
-        if i % config['print_train'] == 0:
-            if is_val:
-                print(f"Epoch {i+1}/{config['epochs']}, train_loss: {loss_train.item():.6f}, map_loss: {map_loss_avg.item():.6f}, val_loss: {loss_val.item():.6f}")
-            else:
-                print(f"Epoch {i+1}/{config['epochs']}, train_loss: {loss_train.item():.6f}, map_loss: {map_loss_avg.item():.6f}")
-    
+        # Update tqdm progress bar with loss information
+        if is_val:
+            loop.set_postfix({
+                'train_loss': f'{loss_train.item():.6f}',
+                'map_loss': f'{map_loss_avg.item():.6f}',
+                'val_loss': f'{loss_val.item():.6f}'
+            })
+        else:
+            loop.set_postfix({
+                'train_loss': f'{loss_train.item():.6f}',
+                'map_loss': f'{map_loss_avg.item():.6f}'
+            })
+        loop.update(1)
+
     return train_history
