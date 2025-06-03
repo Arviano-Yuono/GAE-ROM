@@ -10,45 +10,48 @@ def val(model,
         params: torch.Tensor,
         val_loader: torch_geometric.loader.DataLoader, 
         lambda_map: float = 1):
+    model = model.to(device)
     model.eval()
-    total_reconstruction_loss = 0
-    total_map_loss = 0
+    reconstruction_loss = torch.tensor(0., device=device)
+    map_loss = torch.tensor(0., device=device)
+    total_loss_val = 0
+    reconstruction_loss_cumulative = 0
+    map_loss_cumulative = 0
+    total_loss_cumulative = 0
+    total_batches = 0
     start_ind = 0
     
     with torch.no_grad():
-        for batch in val_loader:
-            # Move batch to device and ensure correct data type
-            batch = batch.to(device)
-            target = batch.x.float()
-            batch.x = batch.x.float()
+        for val_batch in val_loader:
+            # Move val_batch to device and ensure correct data type
+            val_batch = val_batch.to(device)
+            target = val_batch.x.float()
+            val_batch.x = val_batch.x.float()
             
-            # Get current batch parameters
-            current_params = params[start_ind:start_ind+batch.batch_size]
+            # Get current val_batch parameters
+            current_params = params[start_ind:start_ind+val_batch.batch_size]
             
             if config['amp']:
                 with torch.amp.autocast(device_type=device.type, dtype=torch.float16):
-                    out, latent_var, est_latent_var = model(batch, current_params)
+                    out, latent_var, est_latent_var = model(val_batch, current_params)
             else:
-                out, latent_var, est_latent_var = model(batch, current_params)
+                out, latent_var, est_latent_var = model(val_batch, current_params)
                 
-            start_ind += batch.batch_size
+            start_ind += val_batch.batch_size
             
             # Calculate reconstruction loss
             reconstruction_loss = F.mse_loss(out, target)
-            total_reconstruction_loss += reconstruction_loss
+            map_loss = F.mse_loss(est_latent_var, latent_var)
+            total_loss = reconstruction_loss + lambda_map * map_loss
 
-            # Calculate mapping loss if latent variables are available
-            if latent_var is not None and est_latent_var is not None:
-                map_loss = F.mse_loss(est_latent_var, latent_var)
-                total_map_loss += map_loss
+            reconstruction_loss_cumulative += reconstruction_loss.item()
+            map_loss_cumulative += map_loss.item()
+            total_loss_cumulative += total_loss.item()
 
-        # Average losses
-        avg_reconstruction_loss = total_reconstruction_loss / len(val_loader.dataset)
-        if latent_var is not None and est_latent_var is not None:
-            avg_map_loss = total_map_loss / len(val_loader.dataset)
-            # Combine losses with weight factor
-            total_loss = avg_reconstruction_loss + lambda_map * avg_map_loss
-        else:
-            total_loss = avg_reconstruction_loss
+            total_batches += 1 * val_loader.batch_size
 
-    return total_loss
+        reconstruction_loss_val = reconstruction_loss_cumulative / total_batches
+        map_loss_val = map_loss_cumulative / total_batches
+        total_loss_val = total_loss_cumulative / total_batches
+
+        return total_loss_val, reconstruction_loss_val, map_loss_val

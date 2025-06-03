@@ -22,7 +22,7 @@ def train(model: GAE,
           config = config):
     
     torch.cuda.empty_cache()
-    train_trajectories = train_loader.dataset.file_index
+    train_trajectories = [x - 1 for x in train_loader.dataset.file_index]
     train_params = params[train_trajectories].to(device)
 
     model_config = model.config
@@ -59,11 +59,13 @@ def train(model: GAE,
             scheduler = scheduler_class(optimizer, milestones=config['scheduler']['milestones'], gamma=config['scheduler']['gamma'])
     except AttributeError:
         raise ValueError(f"Invalid scheduler: {config['scheduler']['type']}")
-    train_history = dict(train_loss=[], val_loss=[], map_loss=[])
+    
+    train_history = dict(train_loss=[], map_loss=[], reconstruction_loss=[])
+    val_history = dict(val_loss=[], map_loss=[], reconstruction_loss=[])
     best_loss = float('inf')
     loss_val = None
-    # training loop
 
+    # training loop
     if is_tqdm:
         loop = tqdm.tqdm(range(config['epochs']))
     else:
@@ -74,11 +76,13 @@ def train(model: GAE,
         # implement torch amp
         reconstruction_loss = torch.tensor(0., device=device)
         map_loss = torch.tensor(0., device=device)
-        loss_train = 0
-        train_loss_cumulative = 0
+        total_loss_train = 0
+        reconstruction_loss_cumulative = 0
         map_loss_cumulative = 0
+        total_loss_cumulative = 0
         total_batches = 0
         start_ind = 0
+
         for batch in train_loader:
             optimizer.zero_grad()
             # Move batch to device and ensure correct data type
@@ -97,67 +101,73 @@ def train(model: GAE,
             
             start_ind += batch.batch_size
 
-            # Calculate reconstruction loss
+            # Calculate losses
             reconstruction_loss = F.mse_loss(input=out, target=target)
-            # Calculate mapping loss (MSE between estimated and actual latent variables)
-            if latent_var is not None and est_latent_var is not None:
-                map_loss = F.mse_loss(est_latent_var, latent_var)
-                # Combine losses with weight factor
-                total_loss = reconstruction_loss + config['lambda_map'] * map_loss
-            else:
-                total_loss = reconstruction_loss
+            map_loss = F.mse_loss(est_latent_var, latent_var)
+            total_loss = reconstruction_loss + config['lambda_map'] * map_loss
+            
+            reconstruction_loss_cumulative += reconstruction_loss.item()
+            map_loss_cumulative += map_loss.item()
+            total_loss_cumulative += total_loss.item()
 
             total_loss.backward()
             optimizer.step()
             if is_scheduler_per_batch(scheduler):
                 scheduler.step()
-            train_loss_cumulative += reconstruction_loss.item()
-            if latent_var is not None and est_latent_var is not None:
-                map_loss_cumulative += map_loss.item()
-            total_batches += 1 * config['batch_size']
 
-        loss_train = torch.tensor(train_loss_cumulative / total_batches, device=device)
-        if latent_var is not None and est_latent_var is not None:
-            map_loss_avg = torch.tensor(map_loss_cumulative / total_batches, device=device)
-        else:
-            map_loss_avg = torch.tensor(0., device=device)
+            total_batches += 1 * train_loader.batch_size
 
+        reconstruction_loss_train = reconstruction_loss_cumulative / total_batches
+        map_loss_train = map_loss_cumulative / total_batches
+        total_loss_train = total_loss_cumulative / total_batches
+ 
         # scheduler per epoch
         if not is_scheduler_per_batch(scheduler):
             scheduler.step()
             
         # Add gradient clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         if is_val:
-            val_trajectories = val_loader.dataset.file_index
+            val_trajectories = [x - 1 for x in val_loader.dataset.file_index]
             val_params = params[val_trajectories]
-            loss_val = val(model, device, val_params, val_loader, config['lambda_map'])
-            train_history['val_loss'].append(loss_val.item())
-            # save best model
-            if loss_val.item() < best_loss and save_best_model:
-                best_loss = loss_val.item()
-                save_model(model, f'artifacts/{model_name}_best_model.pth')
+            total_loss_val, reconstruction_loss_val, map_loss_val = val(model, device, val_params, val_loader, config['lambda_map'])
+            
+            val_history['val_loss'].append(total_loss_val)
+            val_history['reconstruction_loss'].append(reconstruction_loss_val)
+            val_history['map_loss'].append(map_loss_val)
         else:
-            if loss_train.item() < best_loss and save_best_model:
-                best_loss = loss_train.item()
+            total_loss_val = total_loss_train
+
+        # save best model
+        if total_loss_val < best_loss and save_best_model:
+            best_loss = total_loss_val
+            save_model(model, f'artifacts/{model_name}_best_model.pth')
+        else:
+            if total_loss_train < best_loss and save_best_model:
+                best_loss = total_loss_train
                 save_model(model, f'artifacts/{model_name}_best_model.pth')
         
-        train_history['train_loss'].append(loss_train.item())
-        train_history['map_loss'].append(map_loss_avg.item())
+        train_history['train_loss'].append(total_loss_train)
+        train_history['map_loss'].append(map_loss_train)
+        train_history['reconstruction_loss'].append(reconstruction_loss_train)
 
         # Update tqdm progress bar with loss information
         if is_val:
             loop.set_postfix({
-                'train_loss': f'{loss_train.item():.6f}',
-                'map_loss': f'{map_loss_avg.item():.6f}',
-                'val_loss': f'{loss_val.item():.6f}'
+                'train_loss': f'{total_loss_train:.6f}',
+                'map_loss': f'{map_loss_train:.6f}',
+                'reconstruction_loss': f'{reconstruction_loss_train:.6f}',
+                'val_loss': f'{total_loss_val:.6f}',
+                'val_reconstruction_loss': f'{reconstruction_loss_val:.6f}',
+                'val_map_loss': f'{map_loss_val:.6f}'
             })
         else:
             loop.set_postfix({
-                'train_loss': f'{loss_train.item():.6f}',
-                'map_loss': f'{map_loss_avg.item():.6f}'
+                'train_loss': f'{total_loss_train:.6f}',
+                'map_loss': f'{map_loss_train:.6f}',
+                'reconstruction_loss': f'{reconstruction_loss_train:.6f}'
             })
         loop.update(1)
 
-    return train_history
+    return train_history, val_history
