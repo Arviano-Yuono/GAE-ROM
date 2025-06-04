@@ -1,5 +1,4 @@
 config:
-  name: GAT_pool_128_ae
   seed: 10
   device: cuda
   root_dir: ./ # project root dir
@@ -47,19 +46,19 @@ model:
     is_autoencoder: true
     encoder_layers: [400, 200]
     decoder_layers: [200, 400]
-    latent_dim: 10
+    latent_dim: 25
     act: ELU # ReLU, Tanh, Sigmoid
     dropout: 0 # probability
 
   maptovec:
     is_maptovec: true
-    layer_vec: [2, 100, 100, 100, 100, 100, 10]
+    layer_vec: [2, 100, 100, 100, 100, 100, 25]
     act: Tanh # ReLU, Tanh, Sigmoid
 
 training:
   model_name: NACA0012_GMMConv_AE
   num_workers: 0
-  epochs: 300
+  epochs: 100
   batch_size: 8
   print_train: 1
   amp: false
@@ -67,8 +66,8 @@ training:
   save_best_model: true
   lambda_map: 1
   optimizer:
-    type: Adam
-    learning_rate: 0.001
+    type: AdamW
+    learning_rate: 0.0005
     weight_decay: 0.00001
 
   scheduler:

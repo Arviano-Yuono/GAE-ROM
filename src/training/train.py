@@ -1,3 +1,5 @@
+import os
+import pickle
 from src.model.gae import GAE
 from src.training.val import val
 from src.utils.commons import get_config, save_model, is_scheduler_per_batch
@@ -19,6 +21,8 @@ def train(model: GAE,
           is_tqdm: bool = True,
           single_batch: bool = False,
           save_best_model: bool = True,
+          save_history: bool = True,
+          start_up_epoch: int = 50,
           config = config):
     
     torch.cuda.empty_cache()
@@ -142,11 +146,11 @@ def train(model: GAE,
         # save best model
         if total_loss_val < best_loss and save_best_model:
             best_loss = total_loss_val
-            save_model(model, f'artifacts/{model_name}_best_model.pth')
-        else:
-            if total_loss_train < best_loss and save_best_model:
-                best_loss = total_loss_train
-                save_model(model, f'artifacts/{model_name}_best_model.pth')
+            if os.path.exists(f'artifacts/{model_name}'):
+                save_model(model, f'artifacts/{model_name}/{model_name}_best_model.pth')
+            else:
+                os.makedirs(f'artifacts/{model_name}') 
+                save_model(model, f'artifacts/{model_name}/{model_name}_best_model.pth')
         
         train_history['train_loss'].append(total_loss_train)
         train_history['map_loss'].append(map_loss_train)
@@ -170,4 +174,9 @@ def train(model: GAE,
             })
         loop.update(1)
 
+    if save_history:
+        history_path = f'artifacts/{model_name}/{model_name}_history.pkl'
+        with open(history_path, 'wb') as f:
+            pickle.dump(train_history, f)
+            pickle.dump(val_history, f)
     return train_history, val_history
