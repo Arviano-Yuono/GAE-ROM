@@ -1,6 +1,6 @@
 from sklearn import preprocessing
 import torch
-
+import joblib
 
 def scaler_functions(k):
     if k==1:
@@ -52,6 +52,9 @@ def tensor_scaling(tensor: torch.Tensor, scaling_type: int, scaler_name: str):
         scale = [scaler_s, scaler_f]
     return scale, scaled_data
 
+def load_scaler(scaler_name: str):
+    scaler = joblib.load(f'artifacts/{scaler_name}.joblib')
+    return scaler
 
 def inverse_scaling(tensor, scale, scaling_type):
     if scaling_type==1:

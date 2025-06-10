@@ -68,13 +68,18 @@ def is_scheduler_per_batch(scheduler):
         return False
 
 
-def load_model(save_path: str):
+def load_model(save_path: str, config=None, num_graphs=None):
     # Load the complete state
     state = torch.load(save_path, weights_only=False)
     
     # Create a new model instance
     from src.model.gae import GAE
-    model = GAE(config = state['save_config'])
+    
+    # If config is not provided, use the saved config
+    if config is None:
+        config = state['save_config']
+    
+    model = GAE(config=config, num_graphs=num_graphs)
     
     # Load the state dictionary with strict=False to ignore mismatched keys
     model.load_state_dict(state['state_dict'], strict=False)
