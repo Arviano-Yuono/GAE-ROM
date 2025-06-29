@@ -12,3 +12,6 @@ __pycache__/
 **.pyz
 **.pyx
 **.pyi
+**.pt
+**.yaml
+**.ipynb
