@@ -1,0 +1,88 @@
+config:
+  seed: 10
+  device: cuda
+  root_dir: ./ # project root dir
+  dataset_dir: dataset # dataset dir
+  split_dir: dataset/h5_files # split dir
+  output_dir: ./output/ # output dir
+  mesh_file: D:\TA\TA2\GAE-ROM\dataset\rans_naca0012\incompressible\unsteady_naca0012_mesh.su2
+  data_sample: 1000 # number of data samples to use for training
+  variable_scaling: true
+  scaler_name: standard
+  scaling_type: 4
+  inverse_scaling: true
+  dim_pde: 1
+  variable: Y
+
+preprocessing:
+  normalization_method: zscore # ['zscore', 'magnitude', robust]
+  with_edge_features: true
+
+conv_base: &conv_base
+  type: GMM
+  act: ELU # ReLU, Tanh, Sigmoid
+  head: 4
+  dropout: 0
+  kernel_size: 5
+  K: 5
+  dim: 1
+  num_layers: 5
+  is_batch_norm: false
+  is_skip_connection: true
+
+model:
+  encoder:
+    convolution_layers:
+      <<: *conv_base
+      hidden_channels: [1, 1, 1]
+
+  decoder:
+    convolution_layers:
+      <<: *conv_base
+      hidden_channels: [1, 1, 1]
+
+  autoencoder:
+    is_autoencoder: true
+    encoder_layers: [1000, 400, 200]
+    decoder_layers: [200, 400, 1000]
+    latent_dim: 25
+    act: ELU # ReLU, Tanh, Sigmoid
+    dropout: 0 # probability
+
+  maptovec:
+    is_maptovec: true
+    layer_vec: [2, 100, 100, 100, 100, 100, 25]
+    act: Tanh # ReLU, Tanh, Sigmoid
+
+training:
+  model_name: NACA0012_GMMConv_Y
+  num_workers: 0
+  epochs: 2000
+  batch_size: 8
+  print_train: 1
+  amp: false
+  single_batch_run: false
+  save_best_model: true
+  lambda_map: 1
+  optimizer:
+    type: AdamW
+    learning_rate: 0.0001
+    weight_decay: 0.00001
+
+  scheduler:
+    type: MultiStepLR
+    milestones: []
+    gamma: 0.0001
+    T_max: 100
+    eta_min: 0.00001
+
+  early_stopping:
+    early_stopping: 10
+    patience: 10
+
+  loss:
+    type: rmse # [mse, rmse]
+
+  metric:
+    type: rmse # [mse, rmse]
+
