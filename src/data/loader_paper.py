@@ -23,8 +23,8 @@ class GraphDatasetPaper(Dataset):
         self.file_length = len(self.file_keys)  # Set file_length to match actual number of data samples
         self.file_index = sorted([int(key.split('_')[1]) for key in self.file_keys])
         self.num_graphs = self.h5_file[self.file_keys[0]]['coordinates'].shape[0]
-        self.surface_mask = self.h5_file[self.file_keys[0]]['surface_mask'][:]
-
+        surface_mask = self.h5_file[self.file_keys[0]]['Ux'][:] == 0  # Assuming surface_mask is the same for all files
+        self.surface_mask = surface_mask
 
     def __del__(self):
         if hasattr(self, 'h5_file'):
@@ -41,8 +41,7 @@ class GraphDatasetPaper(Dataset):
         self.edge_list = self.h5_file[file_key]['edge_index'][:] # Convert to NumPy array
         self.edge_features = self.compute_edge_attr(self.edge_list)
         self.edge_weights = self.compute_edge_weights(self.edge_features)
-        
-        #Load velocities
+        #Load velicities
         # print(f"Loading velocities for index {index} out of {len(self.file_keys)}")
         velocities = None # Initialize velocities
         if self.dim_pde == 1:
@@ -50,38 +49,28 @@ class GraphDatasetPaper(Dataset):
                 velocities = self.h5_file[file_key]['Ux'][:] # Convert to NumPy array
             elif self.variable == 'Y':
                 velocities = self.h5_file[file_key]['Uy'][:] # Convert to NumPy array
+            elif self.variable == 'Pressure':
+                velocities = self.h5_file[file_key]['Pressure'][:] # Convert to NumPy array
+            elif self.variable == 'Cp':
+                velocities = self.h5_file[file_key]['Cp'][:] # Convert to NumPy array
+            elif self.variable == 'Cf':
+                velocities = self.h5_file[file_key]['Cf'][:] # Convert to NumPy array
+            else:
+                raise ValueError(f"Unknown variable: {self.variable}")
         elif self.dim_pde == 2:
-            # Load 1D arrays and reshape them to 2D before concatenating
-            ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            velocities = np.concatenate([ux, uy], axis=1)  # Shape: [num_nodes, 2]
-        elif self.dim_pde == 3:
-            # Load 1D arrays and reshape them to 2D before concatenating
-            ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            pressure = self.h5_file[file_key]['pressure'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            velocities = np.concatenate([ux, uy, pressure], axis=1)  # Shape: [num_nodes, 3]
+            print("dim_pde = 2 is not yet implemented")
+            return None, None
         
         #scale velocities
         if velocities is None:
             raise ValueError("Velocities are not loaded, cannot scale.")
-        
-        # Ensure velocities is properly shaped as [num_nodes, num_features]
-        velocities = np.array(velocities)
-        if velocities.ndim == 1:
-            velocities = velocities.reshape(-1, 1)  # Reshape to [num_nodes, 1]
-        
         # velocities, scaler = self.scale_velocities(velocities)
-
-        params = torch.tensor(self.h5_file[file_key]['params'][:], dtype=torch.float64)
 
         data = Data(x = torch.tensor(velocities, dtype=torch.float64).float(),
                     pos = torch.tensor(self.coordinates, dtype=torch.float64),
                     edge_index = torch.tensor(self.edge_list, dtype=torch.long),
                     edge_attr = torch.tensor(self.edge_features, dtype=torch.float64), 
-                    edge_weight = torch.tensor(self.edge_weights, dtype=torch.float64),
-                    surface_mask = torch.tensor(self.surface_mask, dtype=torch.bool),
-                    params = params)
+                    edge_weight = torch.tensor(self.edge_weights, dtype=torch.float64))
         
         return data
     

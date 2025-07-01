@@ -1,7 +1,7 @@
 import os
 import pickle
 from src.model.gae import GAE
-from src.training.val import val
+from src.training.val_surface import val
 from src.utils.commons import get_config, save_model, is_scheduler_per_batch
 import torch
 import torch_geometric
@@ -15,7 +15,9 @@ config = get_config('configs/default.yaml')['training']
 def train(model: GAE, 
           device: torch.device, 
           params: torch.Tensor,
+          surface_mask: torch.Tensor,
           train_loader: torch_geometric.loader.DataLoader,
+          lambda_surface: float = 0.1,
           is_val: bool = False,
           val_loader: torch_geometric.loader.DataLoader = None,
           is_tqdm: bool = True,
@@ -28,10 +30,8 @@ def train(model: GAE,
     torch.cuda.empty_cache()
     train_trajectories = [x - 1 for x in train_loader.dataset.file_index]
     train_params = params[train_trajectories].to(device)
-    num_epochs = config['epochs']
-    
-    model_config = model.config
-    model_name = f"""{model_config['encoder']['convolution_layers']['type']}"""
+
+    model_name = f"""{config['model_name']}"""
     # loss
     loss_fn = config['loss']['type']
     if loss_fn == 'rmse':
@@ -59,26 +59,29 @@ def train(model: GAE,
         if config['scheduler']['type'] == 'StepLR':
             scheduler = scheduler_class(optimizer, step_size=config['scheduler']['step_size'], gamma=config['scheduler']['gamma'])
         elif config['scheduler']['type'] == 'CosineAnnealingLR':
-            scheduler = scheduler_class(optimizer, T_max=config['epochs'])
+            scheduler = scheduler_class(optimizer, T_max=num_epochs)
         elif config['scheduler']['type'] == 'MultiStepLR':
             scheduler = scheduler_class(optimizer, milestones=config['scheduler']['milestones'], gamma=config['scheduler']['gamma'])
     except AttributeError:
         raise ValueError(f"Invalid scheduler: {config['scheduler']['type']}")
     
+    surface_mask = surface_mask
     train_history = dict(train_loss=[], map_loss=[], reconstruction_loss=[])
     val_history = dict(val_loss=[], map_loss=[], reconstruction_loss=[])
     best_loss = float('inf')
     loss_val = None
 
     # training loop
+    num_epochs = config['epochs']
     if is_tqdm:
-        loop = tqdm.tqdm(range(config['epochs']))
+        loop = tqdm.tqdm(range(num_epochs))
     else:
-        loop = range(config['epochs'])
+        loop = range(num_epochs)
 
     for i in loop:
         model.train()
         # implement torch amp
+
         reconstruction_loss = torch.tensor(0., device=device)
         map_loss = torch.tensor(0., device=device)
         total_loss_train = 0
@@ -107,7 +110,9 @@ def train(model: GAE,
             start_ind += batch.batch_size
 
             # Calculate losses
-            reconstruction_loss = F.mse_loss(input=out, target=target)
+            reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean') * lambda_surface \
+            + F.mse_loss(input=out[~surface_mask], target=target[~surface_mask], reduction='mean')
+
             map_loss = F.mse_loss(est_latent_var, latent_var)
             total_loss = reconstruction_loss + config['lambda_map'] * map_loss
             
@@ -136,7 +141,7 @@ def train(model: GAE,
         if is_val:
             val_trajectories = [x - 1 for x in val_loader.dataset.file_index]
             val_params = params[val_trajectories]
-            total_loss_val, reconstruction_loss_val, map_loss_val = val(model, device, val_params, val_loader, config['lambda_map'])
+            total_loss_val, reconstruction_loss_val, map_loss_val = val(model, device, surface_mask, lambda_surface, val_params, val_loader, config['lambda_map'])
             
             val_history['val_loss'].append(total_loss_val)
             val_history['reconstruction_loss'].append(reconstruction_loss_val)
@@ -147,11 +152,11 @@ def train(model: GAE,
         # save best model
         if total_loss_val < best_loss and save_best_model:
             best_loss = total_loss_val
-            if os.path.exists(f'artifacts/no_surface/{model_name}'):
-                save_model(model, f'artifacts/no_surface/{model_name}/{model_name}_best_model_{num_epochs}.pth')
+            if os.path.exists(f'artifacts/surface/{model_name}'):
+                save_model(model, f'artifacts/surface/{model_name}/{model_name}_best_model_{num_epochs}.pth')
             else:
-                os.makedirs(f'artifacts/no_surface/{model_name}') 
-                save_model(model, f'artifacts/no_surface/{model_name}/{model_name}_best_model_{num_epochs}.pth')
+                os.makedirs(f'artifacts/surface/{model_name}') 
+                save_model(model, f'artifacts/surface/{model_name}/{model_name}_best_model_{num_epochs}.pth')
         
         train_history['train_loss'].append(total_loss_train)
         train_history['map_loss'].append(map_loss_train)
@@ -176,7 +181,7 @@ def train(model: GAE,
         loop.update(1)
 
     if save_history:
-        history_path = f'artifacts/no_surface/{model_name}/{model_name}_history_{num_epochs}.pkl'
+        history_path = r'artifacts/surface/{model_name}/{model_name}_history_{num_epochs}.pkl'
         with open(history_path, 'wb') as f:
             pickle.dump(train_history, f)
             pickle.dump(val_history, f)

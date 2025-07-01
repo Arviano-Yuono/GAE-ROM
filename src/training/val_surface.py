@@ -7,6 +7,8 @@ config = get_config('configs/default.yaml')['training']
 
 def val(model, 
         device: torch.device, 
+        surface_mask: torch.Tensor,
+        lambda_surface: float,
         params: torch.Tensor,
         val_loader: torch_geometric.loader.DataLoader, 
         lambda_map: float = 1):
@@ -40,7 +42,8 @@ def val(model,
             start_ind += val_batch.batch_size
             
             # Calculate reconstruction loss
-            reconstruction_loss = F.mse_loss(out, target)
+            reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean') * lambda_surface \
+            + F.mse_loss(input=out[~surface_mask], target=target[~surface_mask], reduction='mean')
             map_loss = F.mse_loss(est_latent_var, latent_var)
             total_loss = reconstruction_loss + lambda_map * map_loss
 

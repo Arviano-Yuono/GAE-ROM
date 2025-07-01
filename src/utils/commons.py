@@ -42,7 +42,11 @@ def get_config(config_path: str):
     return config
 
 
-def save_config(config: dict, save_path: str):
+def save_config(config: dict, task: str):
+    model_type = config['training']['model_name']
+    num_epochs = config['training']['epochs']
+    os.makedirs(f'artifacts/{task}/{model_type}', exist_ok=True)
+    save_path = f"""artifacts/{task}/{model_type}/{model_type}_best_model_{num_epochs}_config.yaml"""
     with open(save_path, 'w') as f:
         yaml.dump(config, f)
 

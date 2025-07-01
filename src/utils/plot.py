@@ -32,7 +32,7 @@ class Plot:
         self.val_dataset = val_dataset
         self.model = model
 
-    def plot_velocity_field(self, data: Data, title: str = "Velocity Field", save = False, xlim=None, ylim=None, colormap='bwr'):
+    def plot_velocity_field(self, data: Data, title: str = "Velocity Field", save = False, xlim=None, ylim=None, v_range=None, colormap='bwr'):
         if data.pos is None or data.x is None:
             print("Error: `data.pos` or `data.x` is None. Cannot plot velocity field.")
             return
@@ -59,7 +59,14 @@ class Plot:
         for i, ax in enumerate(axes):
             vel_comp = vel if num_components == 1 else vel[:, i]
 
-            norm = mcolors.Normalize(vmin=vel_comp.min(), vmax=vel_comp.max())
+            if v_range is not None:
+                norm = mcolors.Normalize(vmin=v_range[0], vmax=v_range[1])
+            else:
+                # Use the maximum absolute value for normalization if v_range is not provided
+                v_range = np.max([vel_comp.max(), np.abs(vel_comp.min())])
+                print(f"Using v_range: {v_range}")
+                norm = mcolors.Normalize(vmin=-v_range, vmax=v_range)
+            
             cs = ax.tricontourf(triang, vel_comp, 100, cmap=colormap, norm=norm)
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="5%", pad=0.1)
@@ -127,9 +134,14 @@ class Plot:
         
         # Create triangulation directly from points
         triang = matplotlib.tri.Triangulation(xx, yy)
-        
+
+        # Plot prediction
+        max = np.max([pred.max(), vel.max()])
+        min = np.min([pred.min(), vel.min()])
+        v_range = np.max([np.abs(max), np.abs(min)])
+
         # Plot ground truth
-        norm1 = mcolors.Normalize(vmin=vel.min(), vmax=vel.max())
+        norm1 = mcolors.Normalize(vmin=-v_range, vmax=v_range)
         cs1 = ax1.tricontourf(triang, vel, 100, cmap=colormap, norm=norm1)
         divider1 = make_axes_locatable(ax1)
         cax1 = divider1.append_axes("right", size="5%", pad=0.1)
@@ -147,8 +159,7 @@ class Plot:
         if ylim is not None:
             ax1.set_ylim(ylim)
 
-        # Plot prediction
-        norm2 = mcolors.Normalize(vmin=pred.min(), vmax=pred.max())
+        norm2 = mcolors.Normalize(vmin=-v_range, vmax=v_range)
         cs2 = ax2.tricontourf(triang, pred, 100, cmap=colormap, norm=norm2)
         divider2 = make_axes_locatable(ax2)
         cax2 = divider2.append_axes("right", size="5%", pad=0.1)
@@ -178,18 +189,24 @@ class Plot:
 
         plt.close(fig)
 
-    def plot_velocity_field_error(self, data: Data, params, device, title: str = "Velocity Error Field", save = False, xlim=None, ylim=None, colormap='bwr'):
+    def plot_velocity_field_error(self, data: Data, 
+                                  params,
+                                  device, title: str = "Velocity Error Field",
+                                  v_range = None, 
+                                  save = False, 
+                                  xlim=None, ylim=None, 
+                                  colormap='bwr'):
         if data.pos is None or data.x is None:
             print("Error: `data.pos` or `data.x` is None. Cannot plot velocity field.")
             return
-        
+        import torch.nn.functional as F
         ground_truth = data.x
         pred, _, _ = self.model(data.to(device), params.to(device))
         pred = pred
-        error = ground_truth - pred
+        error = F.mse_loss(target=ground_truth, input=pred, reduction= 'none')
         error_data = Data(pos=data.pos, x=error).to(device)
 
-        self.plot_velocity_field(data=error_data, title=title, save=save, xlim=xlim, ylim=ylim, colormap=colormap)
+        self.plot_velocity_field(data=error_data, title=title, save=save, xlim=xlim, ylim=ylim, v_range=v_range, colormap=colormap)
         
         
         

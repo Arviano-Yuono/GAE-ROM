@@ -35,6 +35,11 @@ def write_single_h5_file(output_h5_path, trajectories_to_write,
             
             velocities_for_traj = all_scaled_velocities_map[traj_num] # Should be [num_nodes, 2]
             g['Ux'] = velocities_for_traj[:, 0].numpy() # Convert to numpy for h5py
+            g['Uy'] = velocities_for_traj[:, 1].numpy()
+            g['Pressure'] = velocities_for_traj[:, 2].numpy()
+            g['Cp'] = velocities_for_traj[:, 3].numpy()
+            g['Cf'] = velocities_for_traj[:, 4:6].numpy() # Assuming Cf has 2 components
+            
 
 def rename_vtu_files(sorted_files, input_directory):
     """
@@ -133,7 +138,14 @@ def vtu_to_h5(vtu_file_directory,
             
             #velocity
             raw_velocities = np.array(grid.point_data[vtu_array_name], dtype=np.float32)
-            velocities_2d = raw_velocities[:, 0:1]
+            surface_mask = raw_velocities[:,0] == 0.0
+            raw_pressure = np.array(grid.point_data['Pressure'], dtype=np.float32)
+            cp = np.array(grid['Pressure_Coefficient'], dtype=np.float32)
+            cp[~surface_mask] = 0.0 # Set non-surface points to 0
+            cf = np.array(grid['Skin_Friction_Coefficient'], dtype=np.float32)[:,:2]
+            cf[~surface_mask] = 0.0 # Set non-surface points to 0
+
+            velocities_2d = np.concat([raw_velocities[:, :2], raw_pressure[:, None], cp[:, None], cf[:, :2]], axis=1)
             
             # Check for consistent number of nodes
             if trajectory_numbers and coordinates.shape[0] != all_trajectory_data_raw[trajectory_numbers[0]]['coordinates'].shape[0]:
