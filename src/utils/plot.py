@@ -209,5 +209,68 @@ class Plot:
         self.plot_velocity_field(data=error_data, title=title, save=save, xlim=xlim, ylim=ylim, v_range=v_range, colormap=colormap)
         
         
+class PyvistaPlot:
+    def __init__(self, 
+                 vtu_dir: str,
+                 save_dir: str = 'output/',
+                 model: Optional[nn.Module] = None,
+                 dataset: Optional[Data] = None):
+        self.vtu_dir = vtu_dir
+        self.save_dir = save_dir
+        self.model = model       
+        self.dataset = dataset
+        self.dataset_file_index = dataset.file_index
+        self.list_dir = os.listdir(self.vtu_dir)
         
+    def get_mesh_dir(self, index):
+        return os.path.join(self.vtu_dir, f"configuration_{self.dataset_file_index[index]}.vtu")
+
+    def plot_index(self, 
+                    index: int, 
+                    title: str = "Velocity Field", 
+                    save = False, 
+                    variable = None,
+                    zoom = 50,
+                    # camera_position = [0, 0, 0],
+                    mesh: Optional[pv.PolyData] = None,
+                    colormap ='bwr',
+                    save_path: str = "output/"):
+        plotter = pv.Plotter()
+        if mesh is None:
+            mesh = pv.read(self.get_mesh_dir(index))
+        plotter.add_mesh(mesh, scalars=variable, cmap=colormap)
+        plotter.view_xy()
+        plotter.zoom_camera(zoom)
+        plotter.set_position(camera_position)
+        plotter.show()
+
+        if save:
+            plotter.save_graphic(filename=os.path.join(self.save_dir, f"{title}.png"))
+
+    def plot_index_error(self, 
+                                  data: Data, 
+                                  title: str = "Velocity Error Field", 
+                                  save = False, 
+                                  xlim=None, 
+                                  ylim=None, 
+                                  v_range=None, colormap='bwr', save_path: str = None):
+        pass
+
+    def plot_comparison_fields(self, 
+                               SNAP, 
+                               device, 
+                               dataset, 
+                               params, 
+                               grid="vertical", 
+                               comp="_U", 
+                               adjust_title=None, 
+                               xlim=None, ylim=None, colormap='bwr', save=False, save_path: str = None):
+        pass
+
+    def plot_error_field(self, 
+                         data: Data, 
+                         title: str = "Error Field", 
+                         save = False, 
+                         xlim=None, ylim=None, v_range=None, colormap='bwr', save_path: str = None):
+        pass
         
