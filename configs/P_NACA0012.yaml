@@ -2,7 +2,7 @@ config:
   seed: 10
   device: cuda
   root_dir: ./ # project root dir
-  dataset_dir: dataset # dataset dir
+  dataset_dir: dataset/flows # dataset dir
   split_dir: dataset/h5_files # split dir
   output_dir: ./output/ # output dir
   mesh_file: D:\TA\TA2\GAE-ROM\dataset\rans_naca0012\incompressible\unsteady_naca0012_mesh.su2
