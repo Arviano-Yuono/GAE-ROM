@@ -1,15 +1,14 @@
 import gc
-from src.model.graph_encoder import GraphEncoder
-from src.model.graph_decoder import GraphDecoder
+from src.model.encoder_rans import GraphEncoder
+from src.model.decoder_rans import GraphDecoder
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
-from src.utils.commons import get_activation_function, get_config
-config = get_config('configs/default.yaml')
+from src.utils.commons import get_activation_function
 
 class GAE(nn.Module):
-    def __init__(self, config = config, num_graphs = None, device = None):
+    def __init__(self, config, num_graphs = None, device = None):
         super(GAE, self).__init__()
         self.save_config = config
         self.config = self.save_config['model']

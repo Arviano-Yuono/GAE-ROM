@@ -103,3 +103,10 @@ PREPROCESSING:
     They split the model into two steps, first there is the model block, such as encoder and decoder for the GCA and then there is network module, 
     that would assemble the GCA into a working model. The encoder and decoder will take actual inputs while the network module will take
     the Hyperparams dictionary as the input.
+
+Output:
+    Testing.evaluate:
+        for the testing result they append all the snapshots of the velocity field into one array.
+        The appended results are:
+        - decoded velocities
+        - encoded 

@@ -67,6 +67,7 @@ training:
   amp: false
   single_batch_run: true
   save_best_model: true
+  lambda_surface: 1
   optimizer:
     type: AdamW
     learning_rate: 0.01

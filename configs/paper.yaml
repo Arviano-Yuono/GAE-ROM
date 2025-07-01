@@ -2,8 +2,8 @@ config:
   seed: 10
   device: cuda
   root_dir: ./ # project root dir
-  dataset_dir: ./dataset/rans_naca0012/incompressible/flow # dataset dir
-  split_dir: ./dataset/rans_naca0012/incompressible/flow_split # split dir
+  dataset_dir: ./dataset/rans_naca0012/incompressible/dataset # dataset dir
+  split_dir: ./dataset/rans_naca0012/incompressible/dataset/h5_files # split dir
   output_dir: ./output/ # output dir
   # mesh_file: D:\TA\TA2\GAE-ROM\dataset\cylinder_vonkarman\Re200_cut\cylinder_D0.4.su2
   mesh_file: D:\TA\TA2\GAE-ROM\dataset\rans_naca0012\incompressible\unsteady_naca0012_mesh.su2
@@ -20,35 +20,40 @@ preprocessing:
   with_edge_features: true
 
 conv_base: &conv_base
-  type: GMM
+  type: Cheb
   act: ELU # ReLU, Tanh, Sigmoid
   head: 4
   dropout: 0
-  kernel_size: 5
-  K: 5
-  dim: 1
+  kernel_size: 2
+  K: 2
+  dim: 2
   num_layers: 5
   is_batch_norm: false
   is_skip_connection: true
+
+autoencoder: &autoencoder_base
+  is_autoencoder: true
+  act: ELU # ReLU, Tanh, Sigmoid
+  dropout: 0
+  latent_dim: 25
 
 model:
   encoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [1,1,1]
+      hidden_channels: [1, 1, 1]
+    autoencoder_encoder:
+      <<: *autoencoder_base
+      encoder_layers: [400, 200, 100]
 
   decoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [1,1,1]
+      hidden_channels: [1, 1, 1]
+    autoencoder_decoder:
+      <<: *autoencoder_base
+      decoder_layers: [100, 200, 400]
 
-  autoencoder:
-    is_autoencoder: true
-    encoder_layers: [400, 200]
-    decoder_layers: [200, 400]
-    latent_dim: 25
-    act: ELU # ReLU, Tanh, Sigmoid
-    dropout: 0 # probability
 
   maptovec:
     is_maptovec: true
@@ -58,17 +63,18 @@ model:
 training:
   model_name: NACA0012_GMMConv_AE
   num_workers: 0
-  epochs: 100
-  batch_size: 8
+  epochs: 25
+  batch_size: 1
   print_train: 1
   amp: false
   single_batch_run: false
   save_best_model: true
   lambda_map: 1
+  lambda_surface: 0
   optimizer:
     type: AdamW
-    learning_rate: 0.0005
-    weight_decay: 0.00001
+    learning_rate: 0.001
+    weight_decay: 0.0001
 
   scheduler:
     type: MultiStepLR
@@ -82,9 +88,9 @@ training:
     patience: 10
 
   loss:
-    type: rmse # [mse, rmse]
+    type: mse # [mse, rmse]
 
   metric:
-    type: rmse # [mse, rmse]
+    type: mse # [mse, rmse]
 
 

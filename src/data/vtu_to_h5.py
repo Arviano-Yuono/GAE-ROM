@@ -5,7 +5,7 @@ import tqdm
 import numpy as np
 import torch
 import pickle
-from src.data import scaling # Ensure this import is correct and module available
+from src.data import scaling
 
 # Helper function to split trajectory indices
 def split_dataset_trajectories(all_trajectory_indices, train_ratio):
@@ -131,6 +131,10 @@ def vtu_to_h5(vtu_file_directory,
                 edge_points = edges.lines.reshape(-1, 3)[1:] # Skip first element which is line count
                 edge_index = edge_points[:,1:].reshape(2, -1)
             
+            # triangles
+            triangles = np.array(grid.cells_dict[9], dtype=np.int32)
+            triangles = triangles[:, 1:].reshape(2, -1)
+
             #velocity
             raw_velocities = np.array(grid.point_data[vtu_array_name], dtype=np.float32)
             velocities_2d = raw_velocities[:, 0:1]

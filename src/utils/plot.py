@@ -114,7 +114,7 @@ class Plot:
         if adjust_title is not None:
             y0 = adjust_title
 
-        pred, _, _ = self.model(dataset[SNAP].to(device), params.to(device))
+        pred, _, _ = self.model(dataset[SNAP].to(device))
         pred = pred.detach().cpu().numpy()
 
         # Get coordinates and velocity data
@@ -184,13 +184,51 @@ class Plot:
             return
         
         ground_truth = data.x
-        pred, _, _ = self.model(data.to(device), params.to(device))
+        pred, _, _ = self.model(data.to(device))
         pred = pred
         error = ground_truth - pred
         error_data = Data(pos=data.pos, x=error).to(device)
 
         self.plot_velocity_field(data=error_data, title=title, save=save, xlim=xlim, ylim=ylim, colormap=colormap)
         
+    def plot_velocity_scatter(self, data: Data, title: str = "Velocity Field", save=False, xlim=None, ylim=None, colormap='bwr'):
+        """Simple scatter plot of velocity field."""
+        if data.pos is None or data.x is None:
+            print("Error: `data.pos` or `data.x` is None. Cannot plot velocity field.")
+            return
+
+        x_coord = data.pos[:, 0].detach().cpu().numpy()
+        y_coord = data.pos[:, 1].detach().cpu().numpy()
+        vel = data.x.detach().cpu().numpy()
         
+        # Ensure vel is 1D for scatter plot
+        if vel.ndim > 1:
+            vel = vel.flatten()
+        
+        fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+        
+        scatter = ax.scatter(x_coord, y_coord, c=vel, cmap=colormap, s=1)
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_label('Velocity')
+        
+        ax.set_aspect('equal', 'box')
+        ax.set_title(title)
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        if ylim is not None:
+            ax.set_ylim(ylim)
+        
+        plt.tight_layout()
+
+        if save:
+            if not os.path.exists(self.save_dir):
+                os.makedirs(self.save_dir)
+            plt.savefig(os.path.join(self.save_dir, f"{title}.png"))
+        else:
+            plt.show()
+
+        plt.close(fig)
         
         

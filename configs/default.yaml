@@ -47,6 +47,12 @@ model:
       <<: *pool_base
       is_pooling: *pooling_status
       ratio: 0.5
+    autoencoder_encoder:
+      is_autoencoder: true
+      encoder_layers: [1024, 256, 64]
+      latent_dim: 10
+      act: relu
+      dropout: 0 # probability
 
   decoder:
     convolution_layers:
@@ -55,6 +61,12 @@ model:
     unpool:
       <<: *pool_base
       is_unpooling: *pooling_status
+    autoencoder_decoder:
+      is_autoencoder: true
+      decoder_layers: [64, 256, 1024]
+      latent_dim: 10
+      act: relu
+      dropout: 0 # probability
 
   autoencoder:
     is_autoencoder: true
@@ -73,6 +85,7 @@ training:
   amp: false
   single_batch_run: false
   save_best_model: true
+  lambda_surface: 1
   optimizer:
     type: AdamW
     learning_rate: 0.0005

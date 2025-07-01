@@ -69,7 +69,6 @@ def train(model: GAE,
     best_loss = float('inf')
     loss_val = None
 
-    surface= train_loader.dataset.surface_mask
 
     # training loop
     if is_tqdm:
@@ -108,6 +107,8 @@ def train(model: GAE,
             start_ind += batch.batch_size
 
             # Calculate losses
+            surface= batch.surf.bool().to(device)
+
             if config['lambda_surface'] > 0:
                 surface_var_loss = F.mse_loss(input=out[surface, :], target=target[surface, :])
                 volume_var_loss = F.mse_loss(input=out[~surface, :], target=target[~surface, :])
@@ -124,13 +125,15 @@ def train(model: GAE,
             surface_var_loss_cumulative += surface_var_loss.item()
             reconstruction_loss_cumulative += reconstruction_loss.item()
             map_loss_cumulative += map_loss.item()
-            total_loss_cumulative += total_loss.item()
+
 
             if minibatch:
+                optimizer.zero_grad()
                 total_loss = reconstruction_loss + config['lambda_map'] * map_loss
                 total_loss.backward()
             else:
                 total_loss += reconstruction_loss + config['lambda_map'] * map_loss
+            total_loss_cumulative += total_loss.item()
             
             # Add gradient clipping
             # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -159,7 +162,6 @@ def train(model: GAE,
         # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         if is_val:
-            val_trajectories = [x - 1 for x in val_loader.dataset.file_index]
             # val_params = params[val_trajectories]
             total_loss_val, surface_var_loss_val, reconstruction_loss_val, map_loss_val = val(model, device, val_loader, config['lambda_map'])
             
