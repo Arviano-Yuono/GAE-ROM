@@ -1,8 +1,8 @@
 .venv/
-dataset/*
 output/*
-artifacts/
-test_AirFRans.ipynb
+dataset/*
+artifacts/*
+
 **/__pycache__/
 __pycache__/
 **.pyc
