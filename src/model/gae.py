@@ -22,15 +22,20 @@ class GAE(nn.Module):
 
         # autoencoder
         self.is_autoencoder = self.config['autoencoder']['is_autoencoder']
-        self.linear_autoencoder = LinearAutoencoder(config = self.config['autoencoder'], 
+        if not self.is_autoencoder:
+            self.linear_autoencoder = None
+            self.maptovec = None
+            self.act_map = None
+        else:
+            self.linear_autoencoder = LinearAutoencoder(config = self.config['autoencoder'], 
                                            input_dim= ae_input_size)
 
-        # mapping to vector
-        self.maptovec = nn.ModuleList()
-        self.act_map = get_activation_function(self.config['maptovec']['act'])
-        for k in range(len(self.config['maptovec']['layer_vec'])-1):
-            self.maptovec.append(nn.Linear(self.config['maptovec']['layer_vec'][k], self.config['maptovec']['layer_vec'][k+1]))
-        
+            # mapping to vector
+            self.maptovec = nn.ModuleList()
+            self.act_map = get_activation_function(self.config['maptovec']['act'])
+            for k in range(len(self.config['maptovec']['layer_vec'])-1):
+                self.maptovec.append(nn.Linear(self.config['maptovec']['layer_vec'][k], self.config['maptovec']['layer_vec'][k+1]))
+            
         self.skip_proj = None # for skip connection
         # self.is_skip_connection = self.config['autoencoder']['is_skip_connection']
 
@@ -44,19 +49,21 @@ class GAE(nn.Module):
             idx += 1
         return x
     
-    def forward(self, data: Data, params: torch.Tensor):
+    def forward(self, data: Data, params: torch.Tensor, is_verbose: bool = False):
         # x_input = data.x.clone() # for skip connection
         # Ensure data.x is float32
         data.x = data.x.float()
-        encoded_x = self.graph_encoder(data)
+        if is_verbose:
+            print(f"Data shape input for graph decoder: {data.x.shape}")
+        encoded_x = self.graph_encoder(data, is_verbose=is_verbose)
 
         if self.is_autoencoder:
-            latent_variables, decoded_reshaped_x = self.linear_autoencoder(encoded_x)
+            latent_variables, decoded_reshaped_x = self.linear_autoencoder(encoded_x, is_verbose=is_verbose)
             estimated_latent_variables = self.mapping(params)
         else:
             latent_variables, estimated_latent_variables, decoded_reshaped_x = None, None, encoded_x
 
-        estimated_x = self.graph_decoder(data, decoded_reshaped_x)
+        estimated_x = self.graph_decoder(data, decoded_reshaped_x, is_verbose=is_verbose)
 
         # -- Global skip connection --
         # if self.is_skip_connection:

@@ -32,7 +32,19 @@ class Plot:
         self.val_dataset = val_dataset
         self.model = model
 
-    def plot_velocity_field(self, data: Data, title: str = "Velocity Field", save = False, xlim=None, ylim=None, v_range=None, colormap='bwr'):
+    def plot_airfoil(self, airfoil_color= 'gray'):
+        from matplotlib.patches import Polygon
+        self.surface_points = self.train_dataset[0].pos[self.train_dataset.surface_mask].detach().cpu().numpy()
+        # Fill the airfoil surface
+        return Polygon(self.surface_points, closed=True, color='gray', zorder=10)
+
+    def plot_velocity_field(self, data: Data, 
+                            title: str = "Velocity Field", 
+                            save = False, 
+                            xlim=None, ylim=None, 
+                            v_range=None, 
+                            colormap='bwr',
+                            airfoil_color='gray'):
         if data.pos is None or data.x is None:
             print("Error: `data.pos` or `data.x` is None. Cannot plot velocity field.")
             return
@@ -57,15 +69,15 @@ class Plot:
         fmt.set_powerlimits((0, 0))
 
         for i, ax in enumerate(axes):
-            vel_comp = vel if num_components == 1 else vel[:, i]
+            vel_comp = vel.squeeze() if num_components == 1 else vel[:, i]
 
             if v_range is not None:
                 norm = mcolors.Normalize(vmin=v_range[0], vmax=v_range[1])
             else:
                 # Use the maximum absolute value for normalization if v_range is not provided
-                v_range = np.max([vel_comp.max(), np.abs(vel_comp.min())])
+                v_range = 0.5*np.max([vel_comp.max(), np.abs(vel_comp.min())])
                 print(f"Using v_range: {v_range}")
-                norm = mcolors.Normalize(vmin=-v_range, vmax=v_range)
+                norm = mcolors.Normalize(vmin=vel_comp.min(), vmax=vel_comp.max())
             
             cs = ax.tricontourf(triang, vel_comp, 100, cmap=colormap, norm=norm)
             divider = make_axes_locatable(ax)
@@ -75,6 +87,7 @@ class Plot:
             cbar.locator = tick_locator
             cbar.ax.yaxis.set_offset_position('left')
             cbar.update_ticks()
+            ax.add_patch(self.plot_airfoil(airfoil_color=airfoil_color))
             ax.set_aspect('equal', 'box')
             ax.set_title(comp_titles[i])
             ax.set_xlabel('X')
@@ -95,7 +108,7 @@ class Plot:
 
         plt.close(fig)
     
-    def plot_comparison_fields(self, SNAP, device, dataset, params, grid="vertical", comp="_U", adjust_title=None, xlim=None, ylim=None, colormap='bwr', save=False):
+    def plot_comparison_fields(self, SNAP, device, dataset, params, grid="vertical", comp="_U", airfoil_color = "grey",adjust_title=None, xlim=None, ylim=None, colormap='bwr', save=False):
         """
         Plots the velocity field solution for a given snapshot, comparing ground truth and prediction.
 
@@ -127,7 +140,7 @@ class Plot:
         # Get coordinates and velocity data
         xx = dataset[SNAP].pos[:,0].detach().cpu().numpy()
         yy = dataset[SNAP].pos[:,1].detach().cpu().numpy()
-        vel = dataset[SNAP].x.detach().cpu().numpy()
+        vel = dataset[SNAP].x.detach().cpu().numpy().squeeze()
 
         fmt = ticker.ScalarFormatter(useMathText=True)
         fmt.set_powerlimits((0, 0))
@@ -136,12 +149,12 @@ class Plot:
         triang = matplotlib.tri.Triangulation(xx, yy)
 
         # Plot prediction
-        max = np.max([pred.max(), vel.max()])
-        min = np.min([pred.min(), vel.min()])
+        max = np.average([pred.max(), vel.max()])
+        min = np.average([pred.min(), vel.min()])
         v_range = np.max([np.abs(max), np.abs(min)])
 
         # Plot ground truth
-        norm1 = mcolors.Normalize(vmin=-v_range, vmax=v_range)
+        norm1 = mcolors.Normalize(vmin=min, vmax=max)
         cs1 = ax1.tricontourf(triang, vel, 100, cmap=colormap, norm=norm1)
         divider1 = make_axes_locatable(ax1)
         cax1 = divider1.append_axes("right", size="5%", pad=0.1)
@@ -151,6 +164,8 @@ class Plot:
         cbar1.locator = tick_locator
         cbar1.ax.yaxis.set_offset_position('left')
         cbar1.update_ticks()
+
+        ax1.add_patch(self.plot_airfoil(airfoil_color=airfoil_color))
         ax1.set_aspect('equal', 'box')
         ax1.set_title(f'Ground Truth')
         
@@ -160,7 +175,7 @@ class Plot:
             ax1.set_ylim(ylim)
 
         norm2 = mcolors.Normalize(vmin=-v_range, vmax=v_range)
-        cs2 = ax2.tricontourf(triang, pred, 100, cmap=colormap, norm=norm2)
+        cs2 = ax2.tricontourf(triang, pred.squeeze(), 100, cmap=colormap, norm=norm2)
         divider2 = make_axes_locatable(ax2)
         cax2 = divider2.append_axes("right", size="5%", pad=0.1)
         cbar2 = plt.colorbar(cs2, cax=cax2, format=fmt)
@@ -169,6 +184,8 @@ class Plot:
         cbar2.locator = tick_locator
         cbar2.ax.yaxis.set_offset_position('left')
         cbar2.update_ticks()
+
+        ax2.add_patch(self.plot_airfoil(airfoil_color=airfoil_color))
         ax2.set_aspect('equal', 'box')
         ax2.set_title(f'Prediction Results')
         if xlim is not None:
@@ -212,44 +229,55 @@ class Plot:
 class PyvistaPlot:
     def __init__(self, 
                  vtu_dir: str,
+                 window_size: tuple = (3840, 2160),
                  save_dir: str = 'output/',
                  model: Optional[nn.Module] = None,
                  dataset: Optional[Data] = None):
+        
+        self.window_size = window_size
         self.vtu_dir = vtu_dir
         self.save_dir = save_dir
         self.model = model       
         self.dataset = dataset
-        self.list_dir = os.listdir(self.vtu_dir)
         
     def get_mesh_dir(self, index):
-        return os.path.join(self.vtu_dir, f"configuration_{self.dataset_file_index[index]}.vtu")
+        return os.path.join(self.vtu_dir, f"flow_{self.dataset.file_keys[index]}.vtu")
 
     def plot_index(self, 
                     index: int, 
                     title: str = "Velocity Field", 
-                    save = False, 
+                    font_size: int = 11,
+                    position: str = 'upper_edge',
                     variable = None,
                     zoom = 50,
+                    scalar_bar_args: dict = None,
                     camera_position = [0, 0, 10],
                     focal_point = [0, 0, 0],
                     mesh: Optional[pv.PolyData] = None,
                     colormap ='bwr',
-                    save_path: str = "output/"):
-        plotter = pv.Plotter()
+                    background_color: str = 'white',
+                    save = False, 
+                    save_dpi: int = 300,
+                    save_format: str = 'pdf'):
+        
+        self.plotter = pv.Plotter(window_size=self.window_size)
         if mesh is None:
             mesh = pv.read(self.get_mesh_dir(index))
-        plotter.add_mesh(mesh, scalars=variable, cmap=colormap)
-        plotter.view_xy()
-        plotter.zoom_camera(zoom)
-        plotter.camera_position = [
+        self.plotter.add_mesh(mesh, scalars=variable, cmap=colormap, scalar_bar_args=scalar_bar_args, show_scalar_bar=True)
+        self.plotter.view_xy()
+        self.plotter.zoom_camera(zoom)
+        self.plotter.set_background(background_color)
+        self.plotter.add_text(title, position=position, font_size=font_size, color='black')
+        self.plotter.camera_position = [
             [camera_position[0], camera_position[1], camera_position[2]],
             [focal_point[0], focal_point[1], focal_point[2]],
             [0, 0, 0]
         ]
-        plotter.show()
+        self.plotter.show()
 
         if save:
-            plotter.save_graphic(filename=os.path.join(self.save_dir, f"{title}.png"))
+
+            self.plotter.screenshot(filename=os.path.join(self.save_dir, f"{title}.{save_format}"))
 
     def plot_index_error(self, 
                                   data: Data, 

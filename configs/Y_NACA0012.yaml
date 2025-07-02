@@ -20,26 +20,27 @@ preprocessing:
 
 conv_base: &conv_base
   type: SAGE
-  act: ELU # ReLU, Tanh, Sigmoid
+  act: ReLU # ReLU, Tanh, Sigmoid
   head: 4
   dropout: 0
   kernel_size: 5
   K: 5
   dim: 1
   num_layers: 5
-  is_batch_norm: false
-  is_skip_connection: true
+  is_batch_norm: true
+  is_skip_connection: false
 
 model:
   encoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [1, 3, 3, 3, 1]
+      hidden_channels: [1, 32, 32, 32, 3]
 
   decoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [1, 3, 3, 3, 1]
+      # hidden_channels: [3, 8, 8, 8, 1]
+      hidden_channels: [3, 32, 32, 32, 1]
 
   autoencoder:
     is_autoencoder: true

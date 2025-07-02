@@ -110,7 +110,14 @@ def train(model: GAE,
             reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean') * lambda_surface \
             + F.mse_loss(input=out[~surface_mask], target=target[~surface_mask], reduction='mean')
 
-            map_loss = F.mse_loss(est_latent_var, latent_var)
+            if latent_var is None or est_latent_var is None:
+                map_loss = torch.tensor(0., device=device)
+            else:
+                # Ensure latent_var and est_latent_var are float32
+                latent_var = latent_var.float()
+                est_latent_var = est_latent_var.float()
+                map_loss = F.mse_loss(est_latent_var, latent_var)
+                
             total_loss = reconstruction_loss + config['lambda_map'] * map_loss
             
             reconstruction_loss_cumulative += reconstruction_loss.item()
@@ -176,7 +183,7 @@ def train(model: GAE,
         loop.update(1)
 
     if save_history:
-        history_path = r'artifacts/surface/{model_name}/{model_name}_history_{num_epochs}.pkl'
+        history_path = f'artifacts/surface/{model_name}/{model_name}_history_{num_epochs}.pkl'
         if not os.path.exists(os.path.dirname(history_path)):
             os.makedirs(os.path.dirname(history_path))
         with open(history_path, 'wb') as f:

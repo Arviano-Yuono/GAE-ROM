@@ -34,12 +34,20 @@ class LinearAutoencoder(nn.Module):
         self.decoder.add_module(f'decoder_layer_output', nn.Linear(self.config['decoder_layers'][-1], self.input_dim))
         self.decoder.add_module(f'decoder_layer_output_'+self.act_name, self.act)
 
-    def forward(self, x):
+    def forward(self, x, is_verbose: bool = False):
         shape = x.shape
         flattened_x = torch.flatten(x)
-        x_encoded = self.encoder(flattened_x)
+        if is_verbose:
+            print(f"Input shape: {x.shape} -> Flattened shape: {flattened_x.shape}")
+        x_encoded = self.encoder(flattened_x.float())
+        if is_verbose:
+            print(f"Encoded shape: {x_encoded.shape}")
         x_decoded = self.decoder(x_encoded)
+        if is_verbose:
+            print(f"Decoded shape: {x_decoded.shape}")
         x_decoded = x_decoded.reshape(shape)
+        if is_verbose:
+            print(f"Reshaped decoded shape: {x_decoded.shape}")
         return x_encoded, x_decoded
     
     def reset_parameters(self):

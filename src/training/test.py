@@ -1,25 +1,25 @@
 import torch
 import torch_geometric
 from src.model.gae import GAE
+import pyvista as pv
 
 def test(model: GAE,
-         test_params: torch.Tensor,
          test_loader: torch_geometric.loader.DataLoader,
          device: torch.device,
          error_func: list[str],
          save_path: str = None,
          save_results: bool = False,
-         mesh_path: str = "dataset/flows/configuration_1.vtu"):
+         mesh_path: str = "dataset\full\flow_Re_100000_alpha_1.vtu",
+         verbose: bool = False):
     
     model = model.to(device)
-    test_params = test_params.to(device)
     model.eval()
     total_error = {f"total_{error.__name__}": 0 for error in error_func}
     test_results = []
     with torch.no_grad():
         index = 0
         for data in test_loader:
-            params = test_params[index]
+            params = data.params.float().to(device)
             data = data.to(device)
             latent_var = model.mapping(params)
             decoded_x = model.linear_autoencoder.decoder(latent_var)

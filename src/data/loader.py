@@ -36,13 +36,16 @@ class GraphDataset(Dataset):
         self.edge_weights = self.compute_edge_weights(self.edge_features)
         
         if self.variable == 'Cf':
-            self.coordinates = self.coordinates[self.surface_mask]  # Apply surface mask to coordinates
-            self.surface_mask_copy = self.surface_mask.copy()  # Create a copy of the surface mask
-            self.surface_mask = self.surface_mask[self.surface_mask]  # Filter surface mask to match coordinates
-            self.surface_edge_mask = np.isin(self.edge_list[0], np.where(self.surface_mask)[0]) & np.isin(self.edge_list[1], np.where(self.surface_mask)[0])
-            self.edge_list = self.edge_list[:, self.surface_edge_mask]  # Filter edge_list to
-            self.edge_features = self.edge_features[ self.surface_edge_mask,:]  # Filter edge_features to match edge_list
-            self.edge_weights = self.edge_weights[ self.surface_edge_mask]  # Filter edge_weights to
+            surface_node_indices = np.where(self.surface_mask)[0]
+
+            self.surface_edge_mask = np.isin(self.edge_list[0], surface_node_indices) & np.isin(self.edge_list[1], surface_node_indices)
+
+            self.surface_edge_list = self.edge_list[:, self.surface_edge_mask]
+            self.surface_edge_features = self.edge_features[self.surface_edge_mask, :]
+            self.surface_edge_weights = self.edge_weights[self.surface_edge_mask]
+
+            self.coordinates = self.coordinates[self.surface_mask]
+
 
     def __del__(self):
         if hasattr(self, 'h5_file'):
@@ -52,7 +55,7 @@ class GraphDataset(Dataset):
         # load coordinates
         file_key = self.file_keys[index]
         params = [float(self.file_keys[index].split('_')[1]), float(self.file_keys[index].split('_')[3])]   # Assuming params are in the file name 
-        params = torch.tensor(params, dtype=torch.float64).float() 
+        params = torch.tensor(params, dtype=torch.float32).float() 
         #Load velicities
         velocities = None # Initialize velocities
 
@@ -82,7 +85,7 @@ class GraphDataset(Dataset):
             
             elif self.variable == 'Cf':
                 velocities = self.h5_file[file_key]['Cf'][:,:] # Convert to NumPy array
-                velocities = velocities[self.surface_mask_copy, :]
+                velocities = velocities[self.surface_mask, :]
 
         elif self.dim_pde == 3:
             ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
@@ -99,11 +102,11 @@ class GraphDataset(Dataset):
         if velocities.ndim == 1:
             velocities = velocities.reshape(-1, 1)  # Reshape to [num_nodes, 1]
 
-        data = Data(x = torch.tensor(velocities, dtype=torch.float64).float(),
-                    pos = torch.tensor(self.coordinates, dtype=torch.float64),
+        data = Data(x = torch.tensor(velocities, dtype=torch.float32),
+                    pos = torch.tensor(self.coordinates, dtype=torch.float32),
                     edge_index = torch.tensor(self.edge_list, dtype=torch.long),
-                    edge_attr = torch.tensor(self.edge_features, dtype=torch.float64), 
-                    edge_weight = torch.tensor(self.edge_weights, dtype=torch.float64),
+                    edge_attr = torch.tensor(self.edge_features, dtype=torch.float32), 
+                    edge_weight = torch.tensor(self.edge_weights, dtype=torch.float32),
                     params = params)
         
         return data
@@ -143,7 +146,7 @@ class GraphDataset(Dataset):
         """edge attributes are the absolute relative position (x,y) between nodes"""
         # Assuming self.coordinates is now a NumPy array
         edge_attr = np.abs(self.coordinates[edge_list[1]] - self.coordinates[edge_list[0]])
-        return torch.tensor(edge_attr, dtype=torch.float64) # Convert to tensor for consistency if needed later
+        return torch.tensor(edge_attr, dtype=torch.float32) # Convert to tensor for consistency if needed later
     
     def compute_edge_weights(self, edge_attr):
         """edge weights are the norm of the node relative position"""

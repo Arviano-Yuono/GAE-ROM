@@ -11,8 +11,8 @@ config:
   scaler_name: standard
   scaling_type: 4
   inverse_scaling: true
-  dim_pde: 2
-  variable: Cf
+  dim_pde: &dim_pde 2
+  variable: X
 
 preprocessing:
   normalization_method: zscore # ['zscore', 'magnitude', robust]
@@ -34,30 +34,30 @@ model:
   encoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [2, 64, 64, 64, 32]
+      hidden_channels: [2, 6, 6, 1]
 
   decoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [32, 64, 64, 64, 2]
+      hidden_channels: [1, 6, 6, 2]
 
   autoencoder:
     is_autoencoder: true
     encoder_layers: [1000, 400, 200]
     decoder_layers: [200, 400, 1000]
-    latent_dim: 40
+    latent_dim: 25
     act: ELU # ReLU, Tanh, Sigmoid
     dropout: 0 # probability
 
   maptovec:
     is_maptovec: true
-    layer_vec: [2, 100, 100, 100, 100, 100, 40]
+    layer_vec: [2, 100, 100, 100, 100, 100, 25]
     act: Tanh # ReLU, Tanh, Sigmoid
 
 training:
-  model_name: NACA0012_SAGEConv_CF
+  model_name: NACA0012_SAGEConv_VEL
   num_workers: 0
-  epochs: 5000
+  epochs: 100
   batch_size: 8
   print_train: 1
   amp: false

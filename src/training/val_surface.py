@@ -43,7 +43,15 @@ def val(model,
             # Calculate reconstruction loss
             reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean') * lambda_surface \
             + F.mse_loss(input=out[~surface_mask], target=target[~surface_mask], reduction='mean')
-            map_loss = F.mse_loss(est_latent_var, latent_var)
+            
+            if latent_var is None or est_latent_var is None:
+                map_loss = torch.tensor(0., device=device)
+            else:
+                # Ensure latent_var and est_latent_var are float32
+                latent_var = latent_var.float()
+                est_latent_var = est_latent_var.float()
+                map_loss = F.mse_loss(est_latent_var, latent_var)
+            
             total_loss = reconstruction_loss + lambda_map * map_loss
 
             reconstruction_loss_cumulative += reconstruction_loss.item()
