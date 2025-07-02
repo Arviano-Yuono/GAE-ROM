@@ -3,9 +3,9 @@ config:
   device: cuda
   root_dir: ./ # project root dir
   dataset_dir: dataset/flows # dataset dir
-  split_dir: dataset/renamed_h5_files # split dir
+  split_dir: dataset/new_h5_files # split dir
   output_dir: ./output/ # output dir
-  mesh_file: dataset\full\flow_Re_400000_alpha_10.vtu
+  mesh_file: dataset\high_flows\Re1000000\Re1000000_alpha_0\flow.vtu
   data_sample: 1000 # number of data samples to use for training
   variable_scaling: true
   scaler_name: standard
@@ -55,9 +55,9 @@ model:
     act: Tanh # ReLU, Tanh, Sigmoid
 
 training:
-  model_name: NACA0012_GMMConv_P
+  model_name: NACA0012_high_GMMConv_P
   num_workers: 0
-  epochs: 2000
+  epochs: 3000
   batch_size: 8
   print_train: 1
   amp: false

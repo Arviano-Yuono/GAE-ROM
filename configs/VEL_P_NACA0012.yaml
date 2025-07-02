@@ -11,7 +11,7 @@ config:
   scaler_name: standard
   scaling_type: 4
   inverse_scaling: true
-  dim_pde: 1
+  dim_pde: 3
   variable: Pressure
 
 preprocessing:
@@ -34,18 +34,18 @@ model:
   encoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [1, 1, 1]
+      hidden_channels: [3, 1, 1]
 
   decoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [1, 1, 1]
+      hidden_channels: [1, 1, 3]
 
   autoencoder:
     is_autoencoder: true
     encoder_layers: [1000, 400, 200]
     decoder_layers: [200, 400, 1000]
-    latent_dim: 25
+    latent_dim: 15
     act: ELU # ReLU, Tanh, Sigmoid
     dropout: 0 # probability
 
@@ -55,9 +55,9 @@ model:
     act: Tanh # ReLU, Tanh, Sigmoid
 
 training:
-  model_name: NACA0012_GMMConv_P
+  model_name: NACA0012_GMMConv_VEL_P
   num_workers: 0
-  epochs: 2000
+  epochs: 100
   batch_size: 8
   print_train: 1
   amp: false

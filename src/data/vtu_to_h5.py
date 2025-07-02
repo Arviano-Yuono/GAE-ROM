@@ -24,14 +24,39 @@ def split_dataset_trajectories(all_trajectory_indices, train_ratio):
 def write_single_h5_file(output_h5_path, trajectories_to_write, 
                          all_scaled_velocities_map, # Dict: {traj_num: scaled_vel_tensor [nodes, 2]}
                          all_coordinates_map,       # Dict: {traj_num: coord_array [nodes, 2]}
-                         edge_index):
+                         edge_index,
+                         flow_params_map):          # Dict: {traj_num: (reynolds, alpha)}
     with h5py.File(output_h5_path, 'w') as f:
+        # Track used group names to handle duplicates
+        used_group_names = set()
+        duplicate_count = 0
+        
         for traj_num in tqdm.tqdm(trajectories_to_write, desc=f"Writing {os.path.basename(output_h5_path)}"):
-            g = f.create_group(f'configuration_{traj_num}')
+            # Create group name in format Re_XX_alpha_YY
+            reynolds, alpha = flow_params_map[traj_num]
+            base_group_name = f'Re_{int(reynolds)}_alpha_{int(alpha)}'
+            
+            # Handle duplicate group names by adding a suffix
+            group_name = base_group_name
+            counter = 1
+            while group_name in used_group_names:
+                group_name = f'{base_group_name}_{counter}'
+                counter += 1
+            
+            used_group_names.add(group_name)
+            g = f.create_group(group_name)
+            
+            # Print warning if duplicate was detected
+            if group_name != base_group_name:
+                print(f"    ⚠️ Duplicate flow parameters detected. Using group name: {group_name}")
+                duplicate_count += 1
             
             g['coordinates'] = all_coordinates_map[traj_num]
             if edge_index is not None:
                 g['edge_index'] = edge_index
+            
+            # Write flow parameters
+            g['parameters'] = np.array([reynolds, alpha])
             
             velocities_for_traj = all_scaled_velocities_map[traj_num] # Should be [num_nodes, 2]
             g['Ux'] = velocities_for_traj[:, 0].numpy() # Convert to numpy for h5py
@@ -39,6 +64,12 @@ def write_single_h5_file(output_h5_path, trajectories_to_write,
             g['Pressure'] = velocities_for_traj[:, 2].numpy()
             g['Cp'] = velocities_for_traj[:, 3].numpy()
             g['Cf'] = velocities_for_traj[:, 4:6].numpy() # Assuming Cf has 2 components
+        
+        # Print summary of duplicates
+        if duplicate_count > 0:
+            print(f"📊 Summary: {duplicate_count} duplicate flow parameter combinations were found and handled.")
+        else:
+            print(f"📊 Summary: No duplicate flow parameters found.")
             
 
 def rename_vtu_files(sorted_files, input_directory):
@@ -106,21 +137,37 @@ def vtu_to_h5(vtu_file_directory,
 
     all_trajectory_data_raw = {} # Stores raw data: {traj_num: {'coordinates': ndarray, 'velocities': tensor}}
     trajectory_numbers = [] # List of integer trajectory numbers
+    flow_params_map = {} # Dict: {traj_num: (reynolds, alpha)}
 
     print("Pass 1: Reading all VTU files and extracting data...")
     for vtu_file in tqdm.tqdm(vtu_files, desc="Reading VTUs"):
         try:
-            base_name = os.path.splitext(vtu_file)[0] 
-            traj_num_str = ''.join(filter(str.isdigit, base_name))
-            if not traj_num_str:
-                print(f"Warning: Could not extract trajectory number from {vtu_file}. Using index as fallback or skipping.")
-                # Fallback to using index if no number found, or skip
-                # For this example, let's try to use a simple counter if parsing fails, or skip
-                # traj_num = len(trajectory_numbers) + 1 # Example fallback
-                print(f"Skipping {vtu_file} as trajectory number extraction failed.")
-                continue # Skipping if number extraction is crucial and fails
-
-            traj_num = int(traj_num_str)
+            # Extract flow parameters from filename or path
+            # Try to extract from filename first (e.g., "Re4500000_alpha_10.vtu")
+            base_name = os.path.splitext(vtu_file)[0]
+            
+            # Pattern to match flow_Re_XX_alpha_YY (with underscores around Re)
+            import re
+            pattern = r'flow_Re_(\d+(?:\.\d+)?)_alpha_(-?\d+(?:\.\d+)?)'
+            match = re.search(pattern, base_name)
+            
+            if match:
+                reynolds = float(match.group(1))
+                alpha = float(match.group(2))
+                traj_num = len(trajectory_numbers) + 1  # Use sequential numbering
+                print(f"  ✅ Extracted: Re={reynolds:.1e}, alpha={alpha:.1f}° from {vtu_file}")
+            else:
+                # Fallback to old method
+                traj_num_str = ''.join(filter(str.isdigit, base_name))
+                if not traj_num_str:
+                    print(f"Warning: Could not extract flow parameters from {vtu_file}. Skipping.")
+                    continue
+                
+                traj_num = int(traj_num_str)
+                # For backward compatibility, use default values
+                reynolds = 1e6  # Default Reynolds number
+                alpha = 0.0     # Default angle of attack
+                print(f"  ⚠️ Using defaults: Re={reynolds:.1e}, alpha={alpha:.1f}° for {vtu_file}")
             
             grid = pv.UnstructuredGrid(os.path.join(vtu_file_directory, vtu_file))
             if grid is None or grid.points is None or vtu_array_name not in grid.point_data:
@@ -131,10 +178,14 @@ def vtu_to_h5(vtu_file_directory,
             coordinates = np.array(grid.points[:, 0:2], dtype=np.float32) 
             
             if edge_index is None:
-            #edge index
+                #edge index
                 edges = grid.extract_all_edges()
-                edge_points = edges.lines.reshape(-1, 3)[1:] # Skip first element which is line count
-                edge_index = edge_points[:,1:].reshape(2, -1)
+                if edges is not None and hasattr(edges, 'lines') and edges.lines is not None:
+                    edge_points = edges.lines.reshape(-1, 3)[1:] # Skip first element which is line count
+                    edge_index = edge_points[:,1:].reshape(2, -1)
+                else:
+                    print(f"Warning: Could not extract edge connectivity from {vtu_file}")
+                    edge_index = None
             
             #velocity
             raw_velocities = np.array(grid.point_data[vtu_array_name], dtype=np.float32)
@@ -153,6 +204,7 @@ def vtu_to_h5(vtu_file_directory,
                 continue
 
             trajectory_numbers.append(traj_num)
+            flow_params_map[traj_num] = (reynolds, alpha)
             all_trajectory_data_raw[traj_num] = {
                 'coordinates': coordinates,
                 'edge_index': edge_index,
@@ -165,6 +217,13 @@ def vtu_to_h5(vtu_file_directory,
     if not trajectory_numbers:
         print("No valid trajectory data could be extracted after Pass 1.")
         return None, None, None
+    
+    # Print summary of flow parameters
+    print(f"\n📊 Flow Parameters Summary:")
+    unique_params = set(flow_params_map.values())
+    for reynolds, alpha in sorted(unique_params):
+        count = sum(1 for params in flow_params_map.values() if params == (reynolds, alpha))
+        print(f"  Re={reynolds:.1e}, alpha={alpha:.1f}°: {count} files")
     
     trajectory_numbers.sort() # Ensure consistent order before stacking
 
@@ -208,12 +267,22 @@ def vtu_to_h5(vtu_file_directory,
             reshaped_all_velocities = velocities_to_scale.reshape(-1, num_velocity_components)
             
             # Use the transform method of the fitted scaler
-            if hasattr(scaler, 'transform'):
+            if isinstance(scaler, list):
+                # Handle case where scaler is a list (e.g., for scaling_type 3 or 4)
+                print("Warning: Scaler is a list. Using first scaler for transformation.")
+                if len(scaler) > 0 and hasattr(scaler[0], 'transform'):
+                    scaled_transformed_data = scaler[0].transform(reshaped_all_velocities.numpy())
+                    scaled_all_velocities_tensor = torch.tensor(scaled_transformed_data, dtype=torch.float32).reshape(original_shape_all)
+                else:
+                    print("Warning: First scaler in list does not have 'transform' method. Skipping scaling.")
+                    scaled_all_velocities_tensor = velocities_to_scale
+            elif hasattr(scaler, 'transform'):
                 scaled_transformed_data = scaler.transform(reshaped_all_velocities.numpy())
                 scaled_all_velocities_tensor = torch.tensor(scaled_transformed_data, dtype=torch.float32).reshape(original_shape_all)
             else:
                 print("Warning: Fitted scaler does not have a 'transform' method. Scaling might not be applied correctly. Check 'src.data.scaling' module.")
                 # Fallback or error based on how scaling module should behave
+                scaled_all_velocities_tensor = velocities_to_scale
         else:
             print("Warning: Scaler fitting failed. Scaling will be skipped.")
 
@@ -231,12 +300,12 @@ def vtu_to_h5(vtu_file_directory,
     # Write train H5 file
     print(f"Writing training data to {train_h5_path} ({len(train_traj_nums)} trajectories)")
     write_single_h5_file(train_h5_path, train_traj_nums, 
-                         all_scaled_velocities_map, all_coordinates_map, edge_index)
+                         all_scaled_velocities_map, all_coordinates_map, edge_index, flow_params_map)
     
     # Write validation H5 file
     print(f"Writing validation data to {val_h5_path} ({len(val_traj_nums)} trajectories)")
     write_single_h5_file(val_h5_path, val_traj_nums, 
-                         all_scaled_velocities_map, all_coordinates_map, edge_index)
+                         all_scaled_velocities_map, all_coordinates_map, edge_index, flow_params_map)
 
     print(f"VTU to H5 conversion with scaling and splitting complete. Output in {output_h5_dir}")
     return train_h5_path, val_h5_path, scaler_path
