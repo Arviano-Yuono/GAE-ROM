@@ -15,14 +15,15 @@ class GraphDecoder(torch.nn.Module):
 
     def forward(self, data: Data, decoded_reshaped_x: torch.Tensor):
         x = decoded_reshaped_x
-        idx = 0
-        for conv, norm in zip(self.convolution_layers.convs, self.convolution_layers.batch_norms):
-            if self.convolution_layers.config['type'] in ['GMMConv', 'ChebConv', 'GCNConv']:
-                x = self.convolution_layers.act(conv(x, data.edge_index, data.edge_weight))
-            elif self.convolution_layers.config['type'] in ['GATConv']:
-                x = self.convolution_layers.act(conv(x, data.edge_index, data.edge_attr))
+        for i, (conv, norm) in enumerate(zip(self.convolution_layers.convs, self.convolution_layers.batch_norms)):
+            if self.convolution_layers.config['type'] in ['GMM', 'Cheb', 'GCN']:
+                x = conv(x, data.edge_index, data.edge_weight)
+            elif self.convolution_layers.config['type'] in ['GAT']:
+                x = conv(x, data.edge_index, data.edge_attr)
+            elif self.convolution_layers.config['type'] in ['SAGE']:
+                x = conv(x, data.edge_index)
 
-            if (idx != len(self.convolution_layers.convs) - 2):
+            if (i != len(self.convolution_layers.convs) - 2):
                 x = self.convolution_layers.act(x)
 
             if self.convolution_layers.is_skip_connection:
@@ -31,7 +32,6 @@ class GraphDecoder(torch.nn.Module):
             if norm is not None:
                 x = norm(x)
             x = self.convolution_layers.dropout(x)
-            idx += 1
         return x
 
     def reset_parameters(self):

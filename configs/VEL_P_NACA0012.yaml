@@ -11,7 +11,7 @@ config:
   scaler_name: standard
   scaling_type: 4
   inverse_scaling: true
-  dim_pde: 3
+  dim_pde: &dim_pde 3
   variable: Pressure
 
 preprocessing:
@@ -19,7 +19,7 @@ preprocessing:
   with_edge_features: true
 
 conv_base: &conv_base
-  type: GMM
+  type: SAGE
   act: ELU # ReLU, Tanh, Sigmoid
   head: 4
   dropout: 0
@@ -28,24 +28,24 @@ conv_base: &conv_base
   dim: 1
   num_layers: 5
   is_batch_norm: false
-  is_skip_connection: true
+  is_skip_connection: false
 
 model:
   encoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [3, 1, 1]
+      hidden_channels: [3, 6, 6, 1]
 
   decoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [1, 1, 3]
+      hidden_channels: [1, 6, 6, 3]
 
   autoencoder:
     is_autoencoder: true
     encoder_layers: [1000, 400, 200]
     decoder_layers: [200, 400, 1000]
-    latent_dim: 15
+    latent_dim: 25
     act: ELU # ReLU, Tanh, Sigmoid
     dropout: 0 # probability
 
@@ -55,7 +55,7 @@ model:
     act: Tanh # ReLU, Tanh, Sigmoid
 
 training:
-  model_name: NACA0012_GMMConv_VEL_P
+  model_name: NACA0012_SAGEConv_VEL_P
   num_workers: 0
   epochs: 100
   batch_size: 8

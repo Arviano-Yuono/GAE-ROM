@@ -1,7 +1,7 @@
 import os
 import pickle
 from src.model.gae import GAE
-from src.training.val_surface import val
+from src.training.val_cf import val
 from src.utils.commons import get_config, save_model, is_scheduler_per_batch
 import torch
 import torch_geometric
@@ -107,8 +107,7 @@ def train(model: GAE,
             start_ind += batch.batch_size
 
             # Calculate losses
-            reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean') * lambda_surface \
-            + F.mse_loss(input=out[~surface_mask], target=target[~surface_mask], reduction='mean')
+            reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean')
 
             map_loss = F.mse_loss(est_latent_var, latent_var)
             total_loss = reconstruction_loss + config['lambda_map'] * map_loss

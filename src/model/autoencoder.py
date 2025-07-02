@@ -26,8 +26,8 @@ class LinearAutoencoder(nn.Module):
         
         # decoder
         self.decoder = nn.Sequential()
-        self.decoder.add_module(f'decoder_layer_latent_dim', nn.Linear(self.config['latent_dim'], self.config['decoder_layers'][0]))
         self.decoder.add_module(f'decoder_layer_latent_dim_'+self.act_name, self.act)
+        self.decoder.add_module(f'decoder_layer_latent_dim', nn.Linear(self.config['latent_dim'], self.config['decoder_layers'][0]))
         for i in range(len(self.config['decoder_layers'])-1):
             self.decoder.add_module(f'decoder_layer_{i}', nn.Linear(self.config['decoder_layers'][i], self.config['decoder_layers'][i+1]))
             self.decoder.add_module(f'decoder_layer_{i}_'+self.act_name, self.act)

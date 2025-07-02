@@ -7,10 +7,10 @@ import torch
 from torch_geometric.data import Data
 from src.utils.commons import get_activation_function, get_config
 config = get_config('configs/default.yaml')
-
 class GAE(nn.Module):
-    def __init__(self, config = config, num_graphs = None):
+    def __init__(self, ae_input_size, config = config, dim_pde = 1):
         super(GAE, self).__init__()
+        self.dim_pde = dim_pde
         self.save_config = config
         self.config = self.save_config['model']
 
@@ -23,7 +23,7 @@ class GAE(nn.Module):
         # autoencoder
         self.is_autoencoder = self.config['autoencoder']['is_autoencoder']
         self.linear_autoencoder = LinearAutoencoder(config = self.config['autoencoder'], 
-                                           input_dim= num_graphs * self.config['encoder']['convolution_layers']['hidden_channels'][-1])
+                                           input_dim= ae_input_size)
 
         # mapping to vector
         self.maptovec = nn.ModuleList()

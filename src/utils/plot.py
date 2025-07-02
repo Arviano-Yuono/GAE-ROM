@@ -219,7 +219,6 @@ class PyvistaPlot:
         self.save_dir = save_dir
         self.model = model       
         self.dataset = dataset
-        self.dataset_file_index = dataset.file_index
         self.list_dir = os.listdir(self.vtu_dir)
         
     def get_mesh_dir(self, index):
@@ -231,7 +230,8 @@ class PyvistaPlot:
                     save = False, 
                     variable = None,
                     zoom = 50,
-                    # camera_position = [0, 0, 0],
+                    camera_position = [0, 0, 10],
+                    focal_point = [0, 0, 0],
                     mesh: Optional[pv.PolyData] = None,
                     colormap ='bwr',
                     save_path: str = "output/"):
@@ -241,7 +241,11 @@ class PyvistaPlot:
         plotter.add_mesh(mesh, scalars=variable, cmap=colormap)
         plotter.view_xy()
         plotter.zoom_camera(zoom)
-        plotter.set_position(camera_position)
+        plotter.camera_position = [
+            [camera_position[0], camera_position[1], camera_position[2]],
+            [focal_point[0], focal_point[1], focal_point[2]],
+            [0, 0, 0]
+        ]
         plotter.show()
 
         if save:

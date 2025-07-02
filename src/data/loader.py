@@ -34,6 +34,15 @@ class GraphDataset(Dataset):
         self.edge_list = self.h5_file[self.file_keys[0]]['edge_index'][:] # Convert to NumPy array
         self.edge_features = self.compute_edge_attr(self.edge_list)
         self.edge_weights = self.compute_edge_weights(self.edge_features)
+        
+        if self.variable == 'Cf':
+            self.coordinates = self.coordinates[self.surface_mask]  # Apply surface mask to coordinates
+            self.surface_mask_copy = self.surface_mask.copy()  # Create a copy of the surface mask
+            self.surface_mask = self.surface_mask[self.surface_mask]  # Filter surface mask to match coordinates
+            self.surface_edge_mask = np.isin(self.edge_list[0], np.where(self.surface_mask)[0]) & np.isin(self.edge_list[1], np.where(self.surface_mask)[0])
+            self.edge_list = self.edge_list[:, self.surface_edge_mask]  # Filter edge_list to
+            self.edge_features = self.edge_features[ self.surface_edge_mask,:]  # Filter edge_features to match edge_list
+            self.edge_weights = self.edge_weights[ self.surface_edge_mask]  # Filter edge_weights to
 
     def __del__(self):
         if hasattr(self, 'h5_file'):
@@ -56,16 +65,24 @@ class GraphDataset(Dataset):
                 velocities = self.h5_file[file_key]['Pressure'][:] # Convert to NumPy array
             elif self.variable == 'Cp':
                 velocities = self.h5_file[file_key]['Cp'][:] # Convert to NumPy array
-            elif self.variable == 'Cf':
-                velocities = self.h5_file[file_key]['Cf'][:] # Convert to NumPy array
+                velocities = velocities[self.surface_mask]  # Apply surface mask
+            elif self.variable == 'U':
+                ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)
+                uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)
+                velocities = np.sqrt(ux**2 + uy**2)  # Compute magnitude of velocity
             else:
                 raise ValueError(f"Unknown variable: {self.variable}")
             
         elif self.dim_pde == 2:
+            if self.variable in ['X', 'Y']:
             # Load 1D arrays and reshape them to 2D before concatenating
-            ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            velocities = np.concatenate([ux, uy], axis=1)  # Shape: [num_nodes, 2]
+                ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
+                uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
+                velocities = np.concatenate([ux, uy], axis=1)  # Shape: [num_nodes, 2]
+            
+            elif self.variable == 'Cf':
+                velocities = self.h5_file[file_key]['Cf'][:,:] # Convert to NumPy array
+                velocities = velocities[self.surface_mask_copy, :]
 
         elif self.dim_pde == 3:
             ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
