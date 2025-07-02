@@ -1,6 +1,3 @@
-
-Target: Apply the model to NACA0012 with varying angle of attack and Reynold's number as the parameter.
-
 * [X] Make a filter mdoule for the point cloud around the airfoil
 * [ ] fix batch size issue
 * [X] ensure the model can do solo encode or decode and mapping
@@ -13,7 +10,7 @@ Bimbingan pak Pram:
 * [X] lanjuttin untuk prediksi velocity profile
 * [X] buat untuk ngitung Cl and Cd
 
-TODO TODAY:
+**TODO MINGGU:**
 
 Airfrans ada masalah, datasetnya itu variasinya ada di NACA series yang dipake + AoA + Uinf. So we are going back to our original SU2 datset to find the
 
@@ -44,27 +41,23 @@ Beda kasus, masalahnya semua data airfoil beda bentuk/series, ga ada yang sama. 
   * [X] Train pake MSELoss
   * [X] Train pake surface + vol loss
 
-TODO TODAY
+**TODO SENIN**
 
 * [X] train surface with Uy and P
 * [ ] CL and CD
 * [ ] Separation point predicted vs truth
 
-Tampilkan hasil kasus paper untuk verifikasi
+Progrep Pak Pram
 
-Error surface
+* Tampilkan hasil kasus paper untuk verifikasi
+* Error surface
+* plotting warnanya diperbaiki
+* error untuk the whole dataset
+* Pressure penting,  untuk analisa Cp (penting)
+* liat efek dari alpha -> Pressure vs Re --> Pressure
+* Model untuk prediksi Cf  (mungkin Cp juga) untuk mesh airfoilnya doang
 
-plotting warnanya diperbaiki
-
-error untuk the whole dataset
-
-Pressure penting,  untuk analisa Cp (penting)
-
-liat efek dari alpha -> Pressure vs Re --> Pressure
-
-Model untuk prediksi Cf  (mungkin Cp juga) untuk mesh airfoilnya doang
-
-TODO TOMORROW:
+**TODO SELASA:**
 
 * [X] Implement Cp calculation
 
@@ -72,27 +65,27 @@ TODO TOMORROW:
   * [X] surface_mask
   * [X] surface points
   * [X] norm (ternyata ga perlu)
-* [ ] Make a new dataset with more detailed airfoil
+* [X] Make a new dataset with more detailed airfoil
 * [ ] Make a json for meta data like train and test parameters list, like Re_alpha_
-* [ ] INCLUDE PARAMS TO THE DATASET
-* [ ] train using new dataset
+* [X] INCLUDE PARAMS TO THE DATASET
+* [X] train using new dataset
 
-  * [ ] ux
-  * [ ] uy
-  * [ ] p
+  * [X] ux
+  * [X] uy
+  * [X] p
 * [X] Implement test function or method for the val_dataset
 
   * [X] Calculate overall error
   * [ ] Calculate the correlation between the Pressure `<->` alpha and Pressure `<->` Re
-* [ ] Try Cf prediction for the airfoil mesh (input: airfoil_mesh, Re, Alpha)
+* [X] Try Cf prediction for the airfoil mesh (input: airfoil_mesh, Re, Alpha)
 * [ ] Implement better plotting and saving
 
-  * [ ] make a plotter using pyvista instead of matplotlib
+  * [X] make a plotter using pyvista instead of matplotlib
   * [ ] save train time in seconds
   * [ ] plot 2D error
 * [ ] Rescale dataset
 
-TODO TOMORROW
+**TODO RABU**
 
 * [ ] Chapter 4
   * [ ] make all the plots
