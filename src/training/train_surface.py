@@ -177,6 +177,8 @@ def train(model: GAE,
 
     if save_history:
         history_path = r'artifacts/surface/{model_name}/{model_name}_history_{num_epochs}.pkl'
+        if not os.path.exists(os.path.dirname(history_path)):
+            os.makedirs(os.path.dirname(history_path))
         with open(history_path, 'wb') as f:
             pickle.dump(train_history, f)
             pickle.dump(val_history, f)
