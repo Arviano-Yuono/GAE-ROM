@@ -2,6 +2,7 @@ import h5py
 import numpy as np
 import torch
 import pickle
+import tqdm
 from src.data import scaling
 
 def load_scalers(scaler_path):
@@ -36,19 +37,31 @@ def inverse_scale_single_trajectory(data_tensor, scaler, scaling_type):
     
     # Apply inverse scaling based on scaling type
     if scaling_type == 1:  # SAMPLE SCALING
-        inverse_scaled = torch.tensor(scaler.inverse_transform(data_tensor.numpy()), dtype=torch.float32)
+        # Manual inverse scaling: x * std + mean
+        inverse_scaled = data_tensor * scaler.scale_ + scaler.mean_
+        inverse_scaled = torch.tensor(inverse_scaled, dtype=torch.float32)
     elif scaling_type == 2:  # FEATURE SCALING
-        inverse_scaled = torch.tensor(scaler.inverse_transform(data_tensor.T).T, dtype=torch.float32)
+        # Manual inverse scaling on transposed data
+        temp = data_tensor.T * scaler.scale_.reshape(-1, 1) + scaler.mean_.reshape(-1, 1)
+        inverse_scaled = torch.tensor(temp.T, dtype=torch.float32)
     elif scaling_type == 3:  # FEATURE-SAMPLE SCALING
         scaler_f, scaler_s = scaler
         # Inverse the order: first inverse scaler_s, then inverse scaler_f
-        temp = scaler_s.inverse_transform(data_tensor.T)
-        inverse_scaled = torch.tensor(scaler_f.inverse_transform(temp).T, dtype=torch.float32)
+        temp_s = data_tensor * scaler_s.scale_ + scaler_s.mean_
+        temp_f = temp_s.T * scaler_f.scale_.reshape(-1, 1) + scaler_f.mean_.reshape(-1, 1)
+        inverse_scaled = torch.tensor(temp_f.T, dtype=torch.float32)
     elif scaling_type == 4:  # SAMPLE-FEATURE SCALING
         scaler_s, scaler_f = scaler
-        # Inverse the order: first inverse scaler_f, then inverse scaler_s
-        temp = scaler_f.inverse_transform(data_tensor.T)
-        inverse_scaled = torch.tensor(scaler_s.inverse_transform(temp).T, dtype=torch.float32)
+        
+        # Both scalers should have shape (1,) for single-feature data
+        # Inverse feature scaling first: x.T * scale + mean then transpose back
+        temp_f = data_tensor.T * scaler_f.scale_.reshape(-1, 1) + scaler_f.mean_.reshape(-1, 1)
+        temp_f = temp_f.T  # Transpose back
+        
+        # Inverse sample scaling second: x * scale + mean
+        temp_s = temp_f * scaler_s.scale_ + scaler_s.mean_
+        
+        inverse_scaled = torch.tensor(temp_s, dtype=torch.float32)
     else:
         print(f"Warning: Unknown scaling type {scaling_type}")
         inverse_scaled = data_tensor
@@ -74,17 +87,30 @@ def inverse_scale_batch_trajectories(data_tensor, scaler, scaling_type):
     
     # Apply inverse scaling
     if scaling_type == 1:  # SAMPLE SCALING
-        inverse_scaled_reshaped = torch.tensor(scaler.inverse_transform(reshaped_data.numpy()), dtype=torch.float32)
+        # Manual inverse scaling: x * std + mean
+        inverse_scaled_reshaped = reshaped_data * scaler.scale_ + scaler.mean_
+        inverse_scaled_reshaped = torch.tensor(inverse_scaled_reshaped, dtype=torch.float32)
     elif scaling_type == 2:  # FEATURE SCALING
-        inverse_scaled_reshaped = torch.tensor(scaler.inverse_transform(reshaped_data.T).T, dtype=torch.float32)
+        # Manual inverse scaling on transposed data
+        temp = reshaped_data.T * scaler.scale_.reshape(-1, 1) + scaler.mean_.reshape(-1, 1)
+        inverse_scaled_reshaped = torch.tensor(temp.T, dtype=torch.float32)
     elif scaling_type == 3:  # FEATURE-SAMPLE SCALING
         scaler_f, scaler_s = scaler
-        temp = scaler_s.inverse_transform(reshaped_data.T)
-        inverse_scaled_reshaped = torch.tensor(scaler_f.inverse_transform(temp).T, dtype=torch.float32)
+        temp_s = reshaped_data * scaler_s.scale_ + scaler_s.mean_
+        temp_f = temp_s.T * scaler_f.scale_.reshape(-1, 1) + scaler_f.mean_.reshape(-1, 1)
+        inverse_scaled_reshaped = torch.tensor(temp_f.T, dtype=torch.float32)
     elif scaling_type == 4:  # SAMPLE-FEATURE SCALING
         scaler_s, scaler_f = scaler
-        temp = scaler_f.inverse_transform(reshaped_data.T)
-        inverse_scaled_reshaped = torch.tensor(scaler_s.inverse_transform(temp).T, dtype=torch.float32)
+        
+        # Both scalers should have shape (1,) for single-feature data
+        # Inverse feature scaling first: x.T * scale + mean then transpose back
+        temp_f = reshaped_data.T * scaler_f.scale_.reshape(-1, 1) + scaler_f.mean_.reshape(-1, 1)
+        temp_f = temp_f.T  # Transpose back
+        
+        # Inverse sample scaling second: x * scale + mean
+        temp_s = temp_f * scaler_s.scale_ + scaler_s.mean_
+        
+        inverse_scaled_reshaped = torch.tensor(temp_s, dtype=torch.float32)
     else:
         print(f"Warning: Unknown scaling type {scaling_type}")
         inverse_scaled_reshaped = reshaped_data
@@ -319,62 +345,76 @@ def apply_scaling_to_all_variables(h5_file_path, scalers, scaling_type, output_p
     if output_path is None:
         output_path = h5_file_path
     
-    # First, collect all data for each variable across all trajectories
-    print("Collecting data from all trajectories...")
-    all_data_by_variable = {}
-    trajectory_names = []
-    
+    # Get trajectory names first
     with h5py.File(h5_file_path, 'r') as f_in:
         trajectory_names = list(f_in.keys())
-        
-        for var_name in scalers.keys():
-            all_data_by_variable[var_name] = []
-            
-            for traj_name in trajectory_names:
+    
+    print(f"Found {len(trajectory_names)} trajectories")
+    
+    # Apply scaling trajectory by trajectory (node-wise)
+    print("Applying scaling trajectory by trajectory...")
+    scaled_data_by_variable = {}
+    
+    # Initialize storage for each variable
+    for var_name in scalers.keys():
+        scaled_data_by_variable[var_name] = []
+    
+    # Process each trajectory individually
+    for traj_idx, traj_name in enumerate(tqdm.tqdm(trajectory_names, desc="Scaling trajectories")):
+        with h5py.File(h5_file_path, 'r') as f_in:
+            # Get data for this trajectory
+            traj_data = {}
+            for var_name in scalers.keys():
                 if var_name in f_in[traj_name]:
                     data = f_in[traj_name][var_name][:]
                     if data.ndim == 1:
                         data = data.reshape(-1, 1)
-                    all_data_by_variable[var_name].append(torch.tensor(data, dtype=torch.float32))
-    
-    # Apply scaling to each variable using the same approach as vtu_to_h5.py
-    print("Applying scaling to each variable...")
-    scaled_data_by_variable = {}
-    
-    for var_name, data_list in all_data_by_variable.items():
-        print(f"Scaling {var_name}...")
-        
-        # Stack all trajectories for this variable
-        stacked_data = torch.stack(data_list, dim=0)  # [num_trajectories, num_nodes, num_features]
-        original_shape = stacked_data.shape
-        
-        # Reshape for scaling (same as in vtu_to_h5.py)
-        reshaped_data = stacked_data.reshape(-1, stacked_data.shape[-1])
-        
-        # Apply scaling using the fitted scaler
-        scaler = scalers[var_name]
-        
-        if scaling_type == 1:  # SAMPLE SCALING
-            scaled_reshaped = torch.tensor(scaler.transform(reshaped_data.numpy()), dtype=torch.float32)
-        elif scaling_type == 2:  # FEATURE SCALING
-            scaled_reshaped = torch.tensor(scaler.transform(reshaped_data.T).T, dtype=torch.float32)
-        elif scaling_type == 3:  # FEATURE-SAMPLE SCALING
-            scaler_f, scaler_s = scaler
-            temp = scaler_f.transform(reshaped_data.T)
-            scaled_reshaped = torch.tensor(scaler_s.transform(temp).T, dtype=torch.float32)
-        elif scaling_type == 4:  # SAMPLE-FEATURE SCALING
-            scaler_s, scaler_f = scaler
-            temp = scaler_s.transform(reshaped_data)
-            scaled_reshaped = torch.tensor(scaler_f.transform(temp.T).T, dtype=torch.float32)
-        else:
-            print(f"Warning: Unknown scaling type {scaling_type}")
-            scaled_reshaped = reshaped_data
-        
-        # Reshape back to original shape
-        scaled_data = scaled_reshaped.reshape(original_shape)
-        
-        # Split back into individual trajectories
-        scaled_data_by_variable[var_name] = [scaled_data[i] for i in range(scaled_data.shape[0])]
+                    traj_data[var_name] = torch.tensor(data, dtype=torch.float32)
+            
+            # Apply scaling to each variable for this trajectory
+            for var_name, data_tensor in traj_data.items():
+                scaler = scalers[var_name]
+                
+                try:
+                    if scaling_type == 1:  # SAMPLE SCALING
+                        # Manual scaling: (x - mean) / std
+                        scaled_data = (data_tensor - scaler.mean_) / scaler.scale_
+                        scaled_data = torch.tensor(scaled_data, dtype=torch.float32)
+                    elif scaling_type == 2:  # FEATURE SCALING
+                        # Manual scaling on transposed data
+                        temp = (data_tensor.T - scaler.mean_.reshape(-1, 1)) / scaler.scale_.reshape(-1, 1)
+                        scaled_data = torch.tensor(temp.T, dtype=torch.float32)
+                    elif scaling_type == 3:  # FEATURE-SAMPLE SCALING
+                        scaler_f, scaler_s = scaler
+                        # Manual feature scaling first
+                        temp_f = (data_tensor.T - scaler_f.mean_.reshape(-1, 1)) / scaler_f.scale_.reshape(-1, 1)
+                        # Manual sample scaling second
+                        temp_s = (temp_f.T - scaler_s.mean_) / scaler_s.scale_
+                        scaled_data = torch.tensor(temp_s, dtype=torch.float32)
+                    elif scaling_type == 4:  # SAMPLE-FEATURE SCALING
+                        scaler_s, scaler_f = scaler
+                        
+                        # Both scalers should have shape (1,) for single-feature data
+                        # Sample scaling first: (x - mean) / scale
+                        temp_s = (data_tensor - scaler_s.mean_) / scaler_s.scale_
+                        
+                        # Feature scaling second: (x.T - mean) / scale then transpose back
+                        temp_f = (temp_s.T - scaler_f.mean_.reshape(-1, 1)) / scaler_f.scale_.reshape(-1, 1)
+                        temp_f = temp_f.T  # Transpose back
+                        
+                        scaled_data = torch.tensor(temp_f, dtype=torch.float32)
+                    else:
+                        print(f"Warning: Unknown scaling type {scaling_type}")
+                        scaled_data = data_tensor
+                    
+                    # Store scaled data for this trajectory
+                    scaled_data_by_variable[var_name].append(scaled_data)
+                    
+                except Exception as e:
+                    print(f"  ERROR scaling {var_name} for trajectory {traj_name}: {e}")
+                    print(f"  Using original data for this trajectory...")
+                    # Use original data if scaling fails
+                    scaled_data_by_variable[var_name].append(data_tensor)
     
     # Write the scaled data back to H5 file
     print("Writing scaled data to H5 file...")
@@ -383,7 +423,7 @@ def apply_scaling_to_all_variables(h5_file_path, scalers, scaling_type, output_p
             f_out.create_group(traj_name)
             
             for dataset_name in f_in[traj_name].keys():
-                if dataset_name in scalers:
+                if dataset_name in scaled_data_by_variable:
                     # Use scaled data
                     scaled_traj_data = scaled_data_by_variable[dataset_name][traj_idx]
                     f_out[traj_name][dataset_name] = scaled_traj_data.numpy()

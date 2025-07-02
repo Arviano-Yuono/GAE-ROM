@@ -45,10 +45,37 @@ def tensor_scaling(tensor: torch.Tensor, scaling_type: int, scaler_name: str):
         scale = [scaler_f, scaler_s]
     elif scaling_type==4:
         # print("SAMPLE-FEATURE SCALING")
-        scaler_s = scaling_fun_1.fit(tensor)
-        temp = torch.t(torch.tensor(scaler_s.transform(tensor)))
-        scaler_f = scaling_fun_2.fit(temp)
-        scaled_data = torch.unsqueeze(torch.t(torch.tensor(scaler_f.transform(temp))), 0).permute(2, 1, 0)
+        # For SAMPLE-FEATURE scaling with single feature:
+        # Simply calculate mean and std of the entire tensor
+        
+        if tensor.shape[1] == 1:  # Single feature
+            # Calculate mean and std of the entire tensor
+            tensor_mean = torch.mean(tensor, dim=0)  # [1]
+            tensor_std = torch.std(tensor, dim=0)    # [1]
+            
+            # Create scalers with the calculated parameters
+            scaler_s = scaling_fun_1
+            scaler_s.mean_ = tensor_mean.numpy().flatten()  # Shape (1,)
+            scaler_s.scale_ = tensor_std.numpy().flatten()  # Shape (1,)
+            scaler_s.n_features_in_ = 1
+            
+            scaler_f = scaling_fun_2
+            scaler_f.mean_ = tensor_mean.numpy().flatten()  # Shape (1,)
+            scaler_f.scale_ = tensor_std.numpy().flatten()  # Shape (1,)
+            scaler_f.n_features_in_ = 1
+            
+            # Apply scaling
+            temp_s = (tensor - scaler_s.mean_) / scaler_s.scale_
+            temp_f = (temp_s.T - scaler_f.mean_.reshape(-1, 1)) / scaler_f.scale_.reshape(-1, 1)
+            scaled_data = torch.unsqueeze(torch.t(temp_f), 0).permute(2, 1, 0)
+            
+        else:
+            # Multiple features - use the original approach
+            scaler_s = scaling_fun_1.fit(tensor)
+            temp = torch.t(torch.tensor(scaler_s.transform(tensor)))
+            scaler_f = scaling_fun_2.fit(temp)
+            scaled_data = torch.unsqueeze(torch.t(torch.tensor(scaler_f.transform(temp))), 0).permute(2, 1, 0)
+        
         scale = [scaler_s, scaler_f]
     return scale, scaled_data
 

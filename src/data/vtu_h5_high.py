@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import pickle
 import re
-from src.data import scaling
 
 def split_dataset_trajectories(all_trajectory_indices, train_ratio):
     """
@@ -99,6 +98,7 @@ def extract_flow_parameters_from_path(file_path):
 def find_vtu_files_recursive(directory):
     """
     Recursively find all VTU files in the directory structure.
+    Excludes surface_flow.vtu files which have different node counts.
     
     Args:
         directory: Root directory to search
@@ -111,30 +111,95 @@ def find_vtu_files_recursive(directory):
     for root, dirs, files in os.walk(directory):
         for file in files:
             if file.lower().endswith('.vtu'):
+                # Skip surface_flow.vtu files which have different node counts
+                if 'surface_flow.vtu' in file.lower():
+                    continue
                 full_path = os.path.join(root, file)
                 vtu_files.append(full_path)
     
     return sorted(vtu_files)
 
+def simple_scaling_fit(data_tensor):
+    """
+    Simple scaling that calculates mean and std without sklearn.
+    
+    Args:
+        data_tensor: torch.Tensor of shape [num_samples, num_features]
+    
+    Returns:
+        dict: Contains mean, std, and scaling parameters
+    """
+    mean = torch.mean(data_tensor, dim=0)  # [num_features]
+    std = torch.std(data_tensor, dim=0)    # [num_features]
+    
+    # Avoid division by zero
+    std = torch.where(std == 0, torch.ones_like(std), std)
+    
+    return {
+        'mean': mean,
+        'std': std,
+        'fitted': True
+    }
 
+def simple_scaling_transform(data_tensor, scaler_params):
+    """
+    Apply simple scaling transformation.
+    
+    Args:
+        data_tensor: torch.Tensor to scale
+        scaler_params: Dict with mean and std from simple_scaling_fit
+    
+    Returns:
+        torch.Tensor: Scaled data
+    """
+    if not scaler_params.get('fitted', False):
+        raise ValueError("Scaler not fitted. Call simple_scaling_fit first.")
+    
+    mean = scaler_params['mean']
+    std = scaler_params['std']
+    
+    # Ensure shapes match
+    if data_tensor.shape[-1] != mean.shape[0]:
+        raise ValueError(f"Feature dimension mismatch: data has {data_tensor.shape[-1]} features, scaler expects {mean.shape[0]}")
+    
+    # Apply scaling: (x - mean) / std
+    scaled_data = (data_tensor - mean) / std
+    return scaled_data
+
+def simple_scaling_inverse(scaled_tensor, scaler_params):
+    """
+    Inverse scaling transformation.
+    
+    Args:
+        scaled_tensor: torch.Tensor to inverse scale
+        scaler_params: Dict with mean and std from simple_scaling_fit
+    
+    Returns:
+        torch.Tensor: Original scale data
+    """
+    if not scaler_params.get('fitted', False):
+        raise ValueError("Scaler not fitted. Call simple_scaling_fit first.")
+    
+    mean = scaler_params['mean']
+    std = scaler_params['std']
+    
+    # Inverse scaling: x * std + mean
+    original_data = scaled_tensor * std + mean
+    return original_data
 
 def vtu_to_h5(vtu_file_directory, 
               output_h5_dir,
               vtu_array_name='Velocity',
               train_ratio=0.9, 
-              scaling_type=4, 
-              scaler_name='standard',
               overwrite=False):
     """
-    Convert VTU files to H5 format with train/validation split and scaling.
+    Convert VTU files to H5 format with train/validation split and simple scaling.
     
     Args:
         vtu_file_directory: Directory containing VTU files in structure ReXX/ReXX_alpha_YY/flow.vtu
         output_h5_dir: Directory to save train.h5, val.h5, and scaler.pkl
         vtu_array_name: Name of the velocity array in VTU files
         train_ratio: Ratio of data to use for training (0.0 to 1.0)
-        scaling_type: Type of scaling to apply
-        scaler_name: Name of the scaler to use
         overwrite: Whether to overwrite existing files
     
     Returns:
@@ -274,11 +339,11 @@ def vtu_to_h5(vtu_file_directory,
         for fp in flow_parameters_list:
             all_scaled_data[fp] = all_trajectory_data_raw[fp]['variables']
     else:
-        print("Fitting scalers for each variable...")
+        print("Fitting simple scalers for each variable...")
         
-        # Fit scalers for each variable separately
+        # Fit simple scalers for each variable separately
         for var_name in variable_names:
-            print(f"Fitting scaler for {var_name}...")
+            print(f"Fitting simple scaler for {var_name}...")
             
             # Stack data for this variable across all training trajectories
             train_var_data = []
@@ -288,31 +353,59 @@ def vtu_to_h5(vtu_file_directory,
                     var_data = var_data.unsqueeze(1)  # Add feature dimension
                 train_var_data.append(var_data)
             
-            # Stack and reshape for scaling
+            # Stack data for this variable across all training trajectories
             stacked_var_data = torch.stack(train_var_data, dim=0)  # [num_train_traj, num_nodes, num_features]
+            
+            print(f"  Training data shape for {var_name}: {stacked_var_data.shape}")
+            
+            # Reshape to [num_nodes * num_train_traj, num_features] for fitting
             reshaped_var_data = stacked_var_data.reshape(-1, stacked_var_data.shape[-1])
+            print(f"  Reshaped data shape for {var_name}: {reshaped_var_data.shape}")
             
-            print(f"  Training data shape for {var_name}: {reshaped_var_data.shape}")
+            # Fit simple scaler
+            scaler_params = simple_scaling_fit(reshaped_var_data)
+            scalers[var_name] = scaler_params
             
-            # Fit scaler
-            scaler, _ = scaling.tensor_scaling(reshaped_var_data, scaling_type, scaler_name)
-            scalers[var_name] = scaler
-            
-            if scaler:
-                print(f"  Scaler fitted for {var_name}")
-            else:
-                print(f"  Warning: Scaler fitting failed for {var_name}")
+            print(f"  Simple scaler fitted for {var_name}")
+            print(f"  Mean: {scaler_params['mean']}")
+            print(f"  Std: {scaler_params['std']}")
         
-        # For now, skip scaling to get basic functionality working
-        print("Skipping scaling for now - using unscaled data...")
+        # Apply scaling to each variable for each flow parameter
+        print("Applying simple scaling to each variable...")
         for fp in flow_parameters_list:
-            all_scaled_data[fp] = all_trajectory_data_raw[fp]['variables']
+            all_scaled_data[fp] = {}
+            for var_name in variable_names:
+                var_data = all_trajectory_data_raw[fp]['variables'][var_name]
+                scaler_params = scalers[var_name]
+                try:
+                    # Always reshape to [num_nodes, num_features]
+                    if var_data.dim() == 1:
+                        var_data_reshaped = var_data.unsqueeze(1)  # [num_nodes, 1]
+                    else:
+                        var_data_reshaped = var_data  # [num_nodes, num_features]
 
-    # Save the fitted scalers (even though we're not using them for now)
+                    # Debug: print shapes
+                    if fp == flow_parameters_list[0]:  # Only print for first trajectory to avoid spam
+                        print(f"    {var_name} data shape: {var_data_reshaped.shape}")
+
+                    # Apply simple scaling
+                    scaled_var_data = simple_scaling_transform(var_data_reshaped, scaler_params)
+
+                    # Remove the extra dimension if it was added for single-feature variables
+                    if var_data.dim() == 1 and scaled_var_data.dim() == 2 and scaled_var_data.shape[1] == 1:
+                        scaled_var_data = scaled_var_data.squeeze(1)
+
+                    all_scaled_data[fp][var_name] = scaled_var_data
+                except Exception as e:
+                    print(f"  ERROR scaling {var_name} for flow params {fp}: {e}")
+                    print(f"  Using original data...")
+                    all_scaled_data[fp][var_name] = var_data
+
+    # Save the fitted scalers
     if scalers:
         with open(scaler_path, 'wb') as f_scaler:
             pickle.dump(scalers, f_scaler)
-        print(f"Scalers saved to {scaler_path} (not currently used)")
+        print(f"Scalers saved to {scaler_path}")
     else:
         print("No scalers to save")
 

@@ -14,7 +14,6 @@ config = get_config('configs/default.yaml')['training']
 
 def train(model: GAE, 
           device: torch.device, 
-          params: torch.Tensor,
           surface_mask: torch.Tensor,
           train_loader: torch_geometric.loader.DataLoader,
           lambda_surface: float = 0.1,
@@ -28,8 +27,6 @@ def train(model: GAE,
           config = config):
     
     torch.cuda.empty_cache()
-    train_trajectories = [x - 1 for x in train_loader.dataset.file_index]
-    train_params = params[train_trajectories].to(device)
 
     model_name = f"""{config['model_name']}"""
     # loss
@@ -99,7 +96,7 @@ def train(model: GAE,
             batch.x = batch.x.float()
             
             # Get current batch parameters
-            current_params = train_params[start_ind:start_ind+batch.batch_size]
+            current_params = batch.params.float().to(device)
             
             if config['amp']:
                 with torch.amp.autocast(device_type=device.type, dtype=torch.float16):
@@ -139,9 +136,7 @@ def train(model: GAE,
         # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         if is_val:
-            val_trajectories = [x - 1 for x in val_loader.dataset.file_index]
-            val_params = params[val_trajectories]
-            total_loss_val, reconstruction_loss_val, map_loss_val = val(model, device, surface_mask, lambda_surface, val_params, val_loader, config['lambda_map'])
+            total_loss_val, reconstruction_loss_val, map_loss_val = val(model, device, surface_mask, lambda_surface, val_loader, config['lambda_map'])
             
             val_history['val_loss'].append(total_loss_val)
             val_history['reconstruction_loss'].append(reconstruction_loss_val)

@@ -1,15 +1,12 @@
-# src/data/loader.py
-
-import torch_geometric
 from torch_geometric.data import Data
 from torch.utils.data import Dataset
 from src.utils import commons
 import numpy as np
-import meshio
 import os
 import h5py
 import torch
-import scipy
+import pyvista as pv
+
 
 config = commons.get_config('configs/default.yaml')['config']
 
@@ -20,288 +17,121 @@ class GraphDataset(Dataset):
         self.config = config
         self.dataset_dir = config['dataset_dir']
         self.variable = config['variable']
-        self.mesh_file = config['mesh_file']
-        self.variable = config['variable']
         self.dim_pde = config['dim_pde']
-
-        # load mesh
-        self.points, self.triangles, self.areas = self.transform_mesh()
-        self.cell_coordinates = self.compute_cell_center_coordinates()
-        if self.config['preprocessing']['with_edge_features']:
-            self.edge_list = self.calculate_edge_list()
-            # self.edge_list, self.edge_weights, self.edge_features = self.compute_edge_features()
-            self.edge_features = self.compute_edge_attr(self.edge_list)
-            self.edge_weights = self.compute_edge_weights(self.edge_features)
-        else:
-            self.edge_list = self.calculate_edge_list()
-            self.edge_weights = np.ones(self.edge_list.shape[1], dtype=np.float32)
-            self.edge_features = torch.zeros((0, 3), dtype=torch.float32)
-        self.num_nodes = self.triangles.shape[0]
 
         # load data
         self.h5_file = h5py.File(os.path.join(config['split_dir'], f'{split}.h5'), 'r')
-        self.file_length = len(self.h5_file)
-        self.file_keys = list(self.h5_file.keys())
+        self.file_keys = list(self.h5_file.keys()) # remove the first 2 keys which are coordinates and edge_index
+        self.file_length = len(self.file_keys)  # Set file_length to match actual number of data samples
+        self.num_graphs = self.h5_file[self.file_keys[0]]['coordinates'].shape[0]
+        self.surface_mask = pv.read(config["mesh_file"])["Velocity"][:, 0] == 0
+
+        # load coordinates
+        self.coordinates = self.h5_file[self.file_keys[0]]['coordinates'][:] # Convert to NumPy array
+        self.num_nodes = self.coordinates.shape[0]
+
+        # get edge attr and weights
+        self.edge_list = self.h5_file[self.file_keys[0]]['edge_index'][:] # Convert to NumPy array
+        self.edge_features = self.compute_edge_attr(self.edge_list)
+        self.edge_weights = self.compute_edge_weights(self.edge_features)
 
     def __del__(self):
         if hasattr(self, 'h5_file'):
             self.h5_file.close()
 
     def __getitem__(self, index):
+        # load coordinates
+        file_key = self.file_keys[index]
+        params = [float(self.file_keys[index].split('_')[1]), float(self.file_keys[index].split('_')[3])]   # Assuming params are in the file name 
+        params = torch.tensor(params, dtype=torch.float64).float() 
+        #Load velicities
+        velocities = None # Initialize velocities
+
         if self.dim_pde == 1:
             if self.variable == 'X':
-                velocities = self.h5_file[self.file_keys[index]]['Ux'][:]
+                velocities = self.h5_file[file_key]['Ux'][:] # Convert to NumPy array
             elif self.variable == 'Y':
-                velocities = self.h5_file[self.file_keys[index]]['Uy'][:]
+                velocities = self.h5_file[file_key]['Uy'][:] # Convert to NumPy array
+            elif self.variable == 'Pressure':
+                velocities = self.h5_file[file_key]['Pressure'][:] # Convert to NumPy array
+            elif self.variable == 'Cp':
+                velocities = self.h5_file[file_key]['Cp'][:] # Convert to NumPy array
+            elif self.variable == 'Cf':
+                velocities = self.h5_file[file_key]['Cf'][:] # Convert to NumPy array
+            else:
+                raise ValueError(f"Unknown variable: {self.variable}")
+            
         elif self.dim_pde == 2:
-            velocities = self.h5_file[self.file_keys[index]]['velocity'][:]
+            # Load 1D arrays and reshape them to 2D before concatenating
+            ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            velocities = np.concatenate([ux, uy], axis=1)  # Shape: [num_nodes, 2]
+
+        elif self.dim_pde == 3:
+            ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            pressure = self.h5_file[file_key]['Pressure'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            velocities = np.concatenate([ux, uy, pressure], axis=1)  # Shape: [num_nodes, 3]
         
-        if 'velocities' not in locals(): # Check if velocities was assigned
-            raise ValueError(f"Velocities not loaded for index {index}, variable {self.variable}, dim_pde {self.dim_pde}")
+        #scale velocities
+        if velocities is None:
+            raise ValueError("Velocities are not loaded, cannot scale.")
+        # velocities, scaler = self.scale_velocities(velocities)
 
-        cell_velocities = self.compute_cell_center_velocities(velocities)
-        cell_velocities = self.normalize_velocities(cell_velocities)
+        velocities = np.array(velocities)
+        if velocities.ndim == 1:
+            velocities = velocities.reshape(-1, 1)  # Reshape to [num_nodes, 1]
 
-        if self.config['preprocessing']['with_edge_features']:
-            data = Data(x = torch.tensor(cell_velocities, dtype=torch.float32),
-                        pos = torch.tensor(self.cell_coordinates, dtype=torch.float32),
-                        edge_index = torch.tensor(self.edge_list, dtype=torch.long),
-                        edge_attr = torch.tensor(self.edge_features, dtype=torch.float32), 
-                        edge_weight = torch.tensor(self.edge_weights, dtype=torch.float32))
-        else:
-            data = Data(x = torch.tensor(cell_velocities, dtype=torch.float32),
-                        pos = torch.tensor(self.cell_coordinates, dtype=torch.float32),
-                        edge_index = torch.tensor(self.edge_list, dtype=torch.long))
+        data = Data(x = torch.tensor(velocities, dtype=torch.float64).float(),
+                    pos = torch.tensor(self.coordinates, dtype=torch.float64),
+                    edge_index = torch.tensor(self.edge_list, dtype=torch.long),
+                    edge_attr = torch.tensor(self.edge_features, dtype=torch.float64), 
+                    edge_weight = torch.tensor(self.edge_weights, dtype=torch.float64),
+                    params = params)
+        
         return data
     
     def __len__(self):
         return self.file_length
     
-    def normalize_velocities(self, cell_velocities):
-        # Get normalization method from config
-        norm_method = self.config['preprocessing']['normalization_method']  # default to zscore
+    def scale_velocities(self, velocities):
+        # Get scaling method from config
+        scaling_method = self.config['scaler_name']
         
-        if norm_method == 'zscore':
-            # Original z-score normalization
-            mean_velocities = np.mean(cell_velocities, axis=0) 
-            std_velocities = np.std(cell_velocities, axis=0)
-            cell_velocities[:, 0] = (cell_velocities[:, 0] - mean_velocities[0]) / std_velocities[0]
-            cell_velocities[:, 1] = (cell_velocities[:, 1] - mean_velocities[1]) / std_velocities[1]
-            
-        elif norm_method == 'magnitude':
-            # Velocity magnitude normalization
-            velocity_magnitude = np.sqrt(np.sum(cell_velocities**2, axis=1))
-            max_magnitude = np.max(velocity_magnitude)
-            cell_velocities = cell_velocities / max_magnitude
+        # Ensure velocities is a NumPy array if it's not already (e.g., if it's a list)
+        if not isinstance(velocities, np.ndarray):
+            velocities = np.array(velocities)
 
-        elif norm_method == 'robust':
-            # Robust normalization using IQR
-            q1 = np.percentile(cell_velocities, 25, axis=0)
-            q3 = np.percentile(cell_velocities, 75, axis=0)
-            iqr = q3 - q1
-            median_velocities = np.median(cell_velocities, axis=0)
-            cell_velocities = (cell_velocities - median_velocities) / iqr
-            
+        # Reshape velocities to 2D array (n_samples, 1 feature)
+        if velocities.ndim == 1:
+            velocities = velocities.reshape(-1, 1)
+        
+        if scaling_method == 'standard':
+            from sklearn.preprocessing import StandardScaler # Correct import
+            scaler = StandardScaler()
+            velocities = scaler.fit_transform(velocities)
+        elif scaling_method == 'minmax':
+            from sklearn.preprocessing import MinMaxScaler # Correct import
+            scaler = MinMaxScaler()
+            velocities = scaler.fit_transform(velocities)
+        elif scaling_method == 'robust':
+            from sklearn.preprocessing import RobustScaler # Correct import
+            scaler = RobustScaler()
+            velocities = scaler.fit_transform(velocities)
         else:
-            raise ValueError(f"Unknown normalization method: {norm_method}")
-            
-        return cell_velocities
-    
-    def load_mesh(self):
-        if self.mesh_file.endswith('.vtk'):
-            mesh = meshio.read(self.mesh_file, file_format='vtk')
-        elif self.mesh_file.endswith('.su2'):
-            mesh = meshio.read(self.mesh_file, file_format='su2')
-        else:
-            raise ValueError(f"Unknown mesh file format: {self.mesh_file}")
-        return mesh
-    
-    def calculate_edge_list(self):
-        # calculate the edge list from the mesh triangles
-        edge_to_faces = self.build_edge_to_faces(self.triangles)
-        edge_list = []
-        for edge, face_indices in edge_to_faces.items():
-            if len(face_indices) == 2:
-                edge_list.append(face_indices)
-        
-        return np.array(edge_list).T  # shape: (2, num_edges)
-
-    def transform_mesh(self):
-        self.mesh = self.load_mesh()
-        points = self.mesh.points
-        triangles = self.mesh.cells[2].data
-        # Convert 1-based indices to 0-based indices
-        triangles = triangles - 1
-
-        areas = GraphDataset.calculate_area_of_triangles(points, triangles) 
-        return points, triangles, areas
-
-    def compute_edge_normals(self, points, triangles, edge_to_faces):
-        edge_normals = []
-        for edge, face_indices in edge_to_faces.items():
-            normals = []
-            p1 = points[edge[0]][:2]
-            p2 = points[edge[1]][:2]
-            edge_vec = p2 - p1
-            candidate1 = np.array([-edge_vec[1], edge_vec[0]])
-            candidate2 = -candidate1
-
-            for face_idx in face_indices:
-                tri = triangles[face_idx]
-                tri_pts = points[tri][:, :2]
-                centroid = tri_pts.mean(axis=0)
-                midpoint = (p1 + p2) / 2.0
-                if np.dot(candidate1, midpoint - centroid) > 0:
-                    normal = candidate1
-                else:
-                    normal = candidate2
-                # Normalize
-                norm = np.linalg.norm(normal)
-                if norm != 0:
-                    normal = normal / norm
-                normals.append(normal)
-            
-            normal_avg = np.mean(normals, axis=0)
-            norm = np.linalg.norm(normal_avg)
-            if norm != 0:
-                normal_avg = normal_avg / norm
-            edge_normals.append(normal_avg)
-        
-        return np.stack(edge_normals, axis=0)
+            raise ValueError(f"Unknown scaling method: {scaling_method}")
+        return velocities, scaler
     
     def compute_edge_attr(self, edge_list):
         """edge attributes are the absolute relative position (x,y) between nodes"""
-        edge_attr = torch.abs(torch.tensor(self.cell_coordinates[edge_list[1]], dtype=torch.float32) - torch.tensor(self.cell_coordinates[edge_list[0]], dtype=torch.float32))
-        return edge_attr
+        # Assuming self.coordinates is now a NumPy array
+        edge_attr = np.abs(self.coordinates[edge_list[1]] - self.coordinates[edge_list[0]])
+        return torch.tensor(edge_attr, dtype=torch.float64) # Convert to tensor for consistency if needed later
     
     def compute_edge_weights(self, edge_attr):
         """edge weights are the norm of the node relative position"""
+        # edge_attr is expected to be a tensor or numpy array that torch.norm can handle
+        if isinstance(edge_attr, np.ndarray):
+            edge_attr = torch.tensor(edge_attr)
         edge_weights = torch.norm(edge_attr, dim=1)
         return edge_weights
-    
-    def compute_edge_features(self):
-        edge_list = self.calculate_edge_list()
-        edge_weights = np.ones(edge_list.shape[1], dtype=np.float32)
-        edge_distances = self.compute_edge_distances(edge_list)
-        edge_features = torch.tensor(edge_distances, dtype=torch.float32)
-        
-        return edge_list, edge_weights, edge_features
-    
-    def compute_edge_distances(self, edge_list):
-        edge_distances = []
-        for edge in edge_list.T:
-            dist = np.linalg.norm(self.cell_coordinates[edge[0]] - self.cell_coordinates[edge[1]])
-            # print(dist)
-            edge_distances.append(dist)
-        return np.array(edge_distances)
-    
-    @staticmethod
-    def compute_edge_distances_static(cell_coordinates, edge_list):
-        edge_distances = []
-        for edge in edge_list.T:
-            dist = np.linalg.norm(cell_coordinates[edge[0]] - cell_coordinates[edge[1]])
-            edge_distances.append(dist)
-        return np.array(edge_distances)
-    
-    def get_data(self):
-        points, triangles, areas = self.transform_mesh()
-        edge_list, edge_weights, edge_features = self.compute_edge_features()
-        return points, triangles, areas, edge_list, edge_weights, edge_features
-    
-    def compute_cell_center_coordinates(self):
-        cell_coords = []
-        for tri in self.triangles:
-            tri_pts = self.points[tri, :2]
-            centroid = np.mean(tri_pts, axis=0)
-            cell_coords.append(centroid)
-        return np.array(cell_coords)
-    
-    def compute_cell_center_velocities(self, velocity_field):
-        cell_velocities = []
-        valid_triangles = []
-        
-        # First, validate all triangles
-        for tri in self.triangles:
-            if np.any(tri >= len(velocity_field)):
-                print(f"Warning: Triangle indices {tri} are out of bounds for velocity field of size {len(velocity_field)}")
-                continue
-            valid_triangles.append(tri)
-        
-        if not valid_triangles:
-            raise ValueError(f"No valid triangles found. Velocity field size: {len(velocity_field)}, Max triangle index: {np.max(self.triangles)}")
-            
-        # Process valid triangles
-        for tri in valid_triangles:
-            tri_node_vels = velocity_field[tri]
-            tri_avg_vel = np.mean(tri_node_vels, axis=0) 
-            cell_velocities.append(tri_avg_vel)
-            
-        return np.array(cell_velocities)
-
-    @staticmethod
-    def calculate_area(points):
-        # print(f"Points: {points}")
-        x1, y1, _ = points[0]
-        x2, y2, _ = points[1]
-        x3, y3, _ = points[2]
-        return 0.5 * np.abs(x1*(y2 - y3) + x2*(y3 - y1) + x3*(y1 - y2))
-
-    @staticmethod
-    def calculate_area_of_triangles(points, triangles):
-        areas = []
-        for triangle in triangles:
-            areas.append(GraphDataset.calculate_area(points[triangle]))
-        return areas
-
-
-
-class LoadDatasetGCA(torch_geometric.data.Dataset):
-    """
-    A custom dataset class which loads data from a .mat file using scipy.io.loadmat.
-
-    data_mat : scipy.io.loadmat
-        The loaded data in a scipy.io.loadmat object.
-    U : torch.Tensor
-        The tensor representation of the specified variable from the data_mat.
-    xx : torch.Tensor
-        The tensor representation of the 'xx' key from the data_mat. Refers to X coordinates of the domain
-    yy : torch.Tensor
-        The tensor representation of the 'yy' key from the data_mat.Refers to Y coordinates of the domain
-    zz : torch.Tensor
-        The tensor representation of the 'zz' key from the data_mat.Refers to Z coordinates of the domain
-    dim : Integer
-        The integer dim denotes the dimensionality of the domain where the pde is posed
-    T : torch.Tensor
-        The tensor representation of the 'T' key from the data_mat, casted to int. Adjacency Matrix
-    E : torch.Tensor
-        The tensor representation of the 'E' key from the data_mat, casted to int. Connection Matrix
-
-    __init__(self, root_dir, variable)
-        Initializes the LoadDataset object by loading the data from the .mat file at the root_dir location and converting the specified variable to a tensor representation.
-    """
-
-    def __init__(self, root_dir, variable, dim_pde, n_comp):
-        # Load your mat file here using scipy.io.loadmat
-        self.data_mat = scipy.io.loadmat(root_dir)
-        self.dim = dim_pde
-        self.n_comp = n_comp
-        self.xx = torch.tensor(self.data_mat['xx'])
-        self.yy = torch.tensor(self.data_mat['yy'])
-        self.T = torch.tensor(self.data_mat['T'].astype(int))
-        self.E = torch.tensor(self.data_mat['E'].astype(int))
-
-        if self.n_comp == 1:
-            self.U = torch.tensor(self.data_mat[variable])
-        elif self.n_comp == 2:
-            self.VX = torch.tensor(self.data_mat['VX'])
-            self.VY = torch.tensor(self.data_mat['VY'])
-
-        if self.dim == 3:
-            self.zz = torch.tensor(self.data_mat['zz'])
-
-
-    def len(self):
-        pass
-    
-    def get(self):
-        pass

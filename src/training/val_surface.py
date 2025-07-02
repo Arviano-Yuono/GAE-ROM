@@ -9,7 +9,6 @@ def val(model,
         device: torch.device, 
         surface_mask: torch.Tensor,
         lambda_surface: float,
-        params: torch.Tensor,
         val_loader: torch_geometric.loader.DataLoader, 
         lambda_map: float = 1):
     model = model.to(device)
@@ -31,7 +30,7 @@ def val(model,
             val_batch.x = val_batch.x.float()
             
             # Get current val_batch parameters
-            current_params = params[start_ind:start_ind+val_batch.batch_size]
+            current_params = val_batch.params.float().to(device)
             
             if config['amp']:
                 with torch.amp.autocast(device_type=device.type, dtype=torch.float16):
