@@ -19,7 +19,7 @@ preprocessing:
   with_edge_features: true
 
 conv_base: &conv_base
-  type: SAGE
+  type: Cheb
   act: ELU # ReLU, Tanh, Sigmoid
   head: 4
   dropout: 0
@@ -55,7 +55,7 @@ model:
     act: Tanh # ReLU, Tanh, Sigmoid
 
 training:
-  model_name: NACA0012_SAGEConv_VEL_P
+  model_name: NACA0012_ChebConv_VEL_P
   num_workers: 0
   epochs: 1000
   batch_size: 8
