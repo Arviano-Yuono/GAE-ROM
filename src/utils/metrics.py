@@ -7,7 +7,7 @@ def mse_error(pred, target):
 
 def relative_error(pred, target, epsilon = 1e-4):
     assert pred.shape == target.shape, "Prediction and target must have the same shape"
-    return torch.mean(torch.abs(pred - target) / (target + epsilon))
+    return torch.sum((pred - target)**2) / (torch.sum(target**2))
 
 def mae_error(pred, target):
     assert pred.shape == target.shape, "Prediction and target must have the same shape"

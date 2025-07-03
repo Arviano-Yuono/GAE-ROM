@@ -19,7 +19,7 @@ preprocessing:
   with_edge_features: true
 
 conv_base: &conv_base
-  type: SAGE
+  type: Cheb
   act: ELU # ReLU, Tanh, Sigmoid
   head: 4
   dropout: 0
@@ -36,29 +36,28 @@ model:
   encoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [1, 32, 32, 32, 3]
+      hidden_channels: [6, 64, 64, 64, 16]
 
   decoder:
     convolution_layers:
       <<: *conv_base
-      # hidden_channels: [3, 8, 8, 8, 1]
-      hidden_channels: [3, 32, 32, 32, 1]
+      hidden_channels: [16, 64, 64, 64, 3]
 
   autoencoder:
     is_autoencoder: True
     encoder_layers: [1000, 400, 200]
     decoder_layers: [200, 400, 1000]
-    latent_dim: 40
+    latent_dim: 100
     act: ELU # ReLU, Tanh, Sigmoid
     dropout: 0 # probability
 
   maptovec:
     is_maptovec: true
-    layer_vec: [2, 100, 100, 100, 100, 100, 40]
+    layer_vec: [2, 100, 200, 200, 200, 200, 100]
     act: Tanh # ReLU, Tanh, Sigmoid
 
 training:
-  model_name: NACA0012_SAGEConv_P
+  model_name: NACA0012_ChebConv_P
   num_workers: 0
   epochs: 5000
   batch_size: 64

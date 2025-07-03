@@ -3,15 +3,15 @@ config:
   device: cuda
   root_dir: ./ # project root dir
   dataset_dir: dataset/flows # dataset dir
-  split_dir: dataset/renamed_h5_files # split dir
+  split_dir: dataset/high_h5_files # split dir
   output_dir: ./output/ # output dir
-  mesh_file: dataset\full\flow_Re_400000_alpha_10.vtu
+  mesh_file: dataset\high_flows\Re1500000\Re1500000_alpha_0\surface_flow.vtu
   data_sample: 1000 # number of data samples to use for training
   variable_scaling: true
   scaler_name: standard
   scaling_type: 4
   inverse_scaling: true
-  dim_pde: 2
+  dim_pde: 5
   variable: Cf
 
 preprocessing:
@@ -34,12 +34,12 @@ model:
   encoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [2, 64, 64, 64, 32]
+      hidden_channels: [5, 64, 64, 64, 32]
 
   decoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [32, 64, 64, 64, 2]
+      hidden_channels: [32, 64, 64, 64, 3]
 
   autoencoder:
     is_autoencoder: true

@@ -7,7 +7,6 @@ import h5py
 import torch
 import pyvista as pv
 
-
 config = commons.get_config('configs/default.yaml')['config']
 
 class GraphDataset(Dataset):
@@ -24,27 +23,23 @@ class GraphDataset(Dataset):
         self.file_keys = list(self.h5_file.keys()) # remove the first 2 keys which are coordinates and edge_index
         self.file_length = len(self.file_keys)  # Set file_length to match actual number of data samples
         self.num_graphs = self.h5_file[self.file_keys[0]]['coordinates'].shape[0]
-        self.surface_mask = pv.read(config["mesh_file"])["Velocity"][:, 0] == 0
-
+            
         # load coordinates
         self.coordinates = self.h5_file[self.file_keys[0]]['coordinates'][:] # Convert to NumPy array
         self.num_nodes = self.coordinates.shape[0]
+
+        if self.variable == 'Cf':
+            self.surface_mask = np.ones(self.num_graphs, dtype=bool)  # Initialize surface_mask
+            self.log_scaled_distannce = None 
+        else:
+            self.surface_mask = pv.read(config["mesh_file"])["Velocity"][:, 0] == 0
+            self.log_scaled_distannce = self.log_scaling_distance(self.compute_implicit_distance(fluid_coords=self.coordinates,
+                                                                                       surface_coords=self.coordinates[self.surface_mask, :2]))
 
         # get edge attr and weights
         self.edge_list = self.h5_file[self.file_keys[0]]['edge_index'][:] # Convert to NumPy array
         self.edge_features = self.compute_edge_attr(self.edge_list)
         self.edge_weights = self.compute_edge_weights(self.edge_features)
-        
-        if self.variable == 'Cf':
-            surface_node_indices = np.where(self.surface_mask)[0]
-
-            self.surface_edge_mask = np.isin(self.edge_list[0], surface_node_indices) & np.isin(self.edge_list[1], surface_node_indices)
-
-            self.surface_edge_list = self.edge_list[:, self.surface_edge_mask]
-            self.surface_edge_features = self.edge_features[self.surface_edge_mask, :]
-            self.surface_edge_weights = self.edge_weights[self.surface_edge_mask]
-
-            self.coordinates = self.coordinates[self.surface_mask]
 
 
     def __del__(self):
@@ -57,22 +52,32 @@ class GraphDataset(Dataset):
         params = [float(self.file_keys[index].split('_')[1]), float(self.file_keys[index].split('_')[3])]   # Assuming params are in the file name 
         params = torch.tensor(params, dtype=torch.float32).float() 
         #Load velicities
-        velocities = None # Initialize velocities
+        features = None # Initialize features
+        target = None  # Initialize target
 
         if self.dim_pde == 1:
             if self.variable == 'X':
-                velocities = self.h5_file[file_key]['Ux'][:] # Convert to NumPy array
+                ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1) # Convert to NumPy array
+                implicit_distance = self.log_scaled_distannce
+                features = np.concatenate([ux.reshape(-1, 1), implicit_distance.reshape(-1, 1)], axis=1)
+                target = ux
             elif self.variable == 'Y':
-                velocities = self.h5_file[file_key]['Uy'][:] # Convert to NumPy array
+                uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1) # Convert to NumPy array
+                implicit_distance = self.log_scaled_distannce
+                features = np.concatenate([uy.reshape(-1, 1), implicit_distance.reshape(-1, 1)], axis=1)
+                target = uy
             elif self.variable == 'Pressure':
-                velocities = self.h5_file[file_key]['Pressure'][:] # Convert to NumPy array
+                p = self.h5_file[file_key]['Pressure'][:].reshape(-1, 1) # Convert to NumPy array
+                implicit_distance = self.log_scaled_distannce
+                features = np.concatenate([p.reshape(-1, 1), implicit_distance.reshape(-1, 1)], axis=1)  # Concatenate pressure and distance
+                target = p
             elif self.variable == 'Cp':
-                velocities = self.h5_file[file_key]['Cp'][:] # Convert to NumPy array
-                velocities = velocities[self.surface_mask]  # Apply surface mask
+                features = self.h5_file[file_key]['Cp'][:] # Convert to NumPy array
+                features = features[self.surface_mask]  # Apply surface mask
             elif self.variable == 'U':
                 ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)
                 uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)
-                velocities = np.sqrt(ux**2 + uy**2)  # Compute magnitude of velocity
+                features = np.sqrt(ux**2 + uy**2)  # Compute magnitude of velocity
             else:
                 raise ValueError(f"Unknown variable: {self.variable}")
             
@@ -81,28 +86,61 @@ class GraphDataset(Dataset):
             # Load 1D arrays and reshape them to 2D before concatenating
                 ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
                 uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-                velocities = np.concatenate([ux, uy], axis=1)  # Shape: [num_nodes, 2]
-            
-            elif self.variable == 'Cf':
-                velocities = self.h5_file[file_key]['Cf'][:,:] # Convert to NumPy array
-                velocities = velocities[self.surface_mask, :]
+                features = np.concatenate([ux, uy], axis=1)  # Shape: [num_nodes, 2]
+        
+        elif self.variable == 'full':
+            ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)
+            uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)
+            pressure = self.h5_file[file_key]['Pressure'][:].reshape(-1, 1)
+            nu_tilde = self.h5_file[file_key]['Nu_Tilde'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            eddie_viscosity = self.h5_file[file_key]['Eddy_Viscosity'][:].reshape(-1, 1)
+            implicit_distance = self.compute_implicit_distance(fluid_coords=self.coordinates, 
+                                                              surface_coords=self.coordinates[self.surface_mask, :2])  # Assuming surface_mask is a boolean 
+            dist_log_scaled = self.log_scaling_distance(implicit_distance).reshape(-1,1)  # Log scaling the distances
+            features = np.concatenate([ux, uy, pressure, nu_tilde, eddie_viscosity, dist_log_scaled], axis=1)  # Shape: [num_nodes, 5]
+            target = np.concatenate([ux, uy, pressure], axis=1)  # Shape: [num_nodes, 3]
+
+
+        elif self.variable == 'Cf':
+            x = self.coordinates[:, 0].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            y = self.coordinates[:, 1].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            Y_plus = self.h5_file[file_key]['Y_Plus'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            re = np.log10(float(params[0].item()) * np.ones(x.shape)) # Assuming params[0] is Re
+            alpha = np.deg2rad(float(params[1].item()) * np.ones(x.shape)) # Assuming params[1] is alpha
+            cf_x = self.h5_file[file_key]['Cf'][:, 0].reshape(-1, 1)  # Ensure cf is a 2D array
+            cf_y = self.h5_file[file_key]['Cf'][:, 1].reshape(-1, 1)  # Ensure cf is a 2D array
+            cp = self.h5_file[file_key]['Cp'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
+
+            features = np.concatenate([x, y, Y_plus, re, alpha], axis=1)
+            target = np.concatenate([cf_x, cf_y, cp], axis=1)
+            if self.edge_list.shape[1] == 0:
+                from torch_geometric.transforms import RadiusGraph
+                data = Data(pos = torch.tensor(self.coordinates, dtype=torch.float32))
+                transform = RadiusGraph(r=0.15, max_num_neighbors=2, loop=False)  # loop=False avoids self-loops
+                self.edge_list = transform(data).edge_index.numpy()  # Convert to NumPy array
+                self.edge_features = self.compute_edge_attr(self.edge_list)
+                self.edge_weights = self.compute_edge_weights(self.edge_features) 
 
         elif self.dim_pde == 3:
             ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
             uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
             pressure = self.h5_file[file_key]['Pressure'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            velocities = np.concatenate([ux, uy, pressure], axis=1)  # Shape: [num_nodes, 3]
+            features = np.concatenate([ux, uy, pressure], axis=1)  # Shape: [num_nodes, 3]
         
-        #scale velocities
-        if velocities is None:
-            raise ValueError("Velocities are not loaded, cannot scale.")
-        # velocities, scaler = self.scale_velocities(velocities)
+        #scale features
+        if features is None:
+            raise ValueError("features are not loaded, cannot scale.")
+        # features, scaler = self.scale_features(features)
 
-        velocities = np.array(velocities)
-        if velocities.ndim == 1:
-            velocities = velocities.reshape(-1, 1)  # Reshape to [num_nodes, 1]
+        features = np.array(features)
+        if features.ndim == 1:
+            features = features.reshape(-1, 1)  # Reshape to [num_nodes, 1]
 
-        data = Data(x = torch.tensor(velocities, dtype=torch.float32),
+        if target is None:
+            target = features
+
+        data = Data(x = torch.tensor(features, dtype=torch.float32),
+                    y = torch.tensor(target, dtype=torch.float32),
                     pos = torch.tensor(self.coordinates, dtype=torch.float32),
                     edge_index = torch.tensor(self.edge_list, dtype=torch.long),
                     edge_attr = torch.tensor(self.edge_features, dtype=torch.float32), 
@@ -155,3 +193,26 @@ class GraphDataset(Dataset):
             edge_attr = torch.tensor(edge_attr)
         edge_weights = torch.norm(edge_attr, dim=1)
         return edge_weights
+    
+    def compute_implicit_distance(self, fluid_coords: np.ndarray, surface_coords: np.ndarray) -> np.ndarray:        
+        """
+        Compute the distance from each fluid node to the nearest surface node.
+
+        Parameters:
+        - fluid_coords: [num_nodes, 2] — coordinates of all fluid domain nodes
+        - surface_coords: [num_surface_nodes, 2] — coordinates of airfoil surface nodes
+
+        Returns:
+        - distances: [num_nodes] — minimum distance from each fluid node to surface
+        """
+        from scipy.spatial import cKDTree
+
+        surface_kdtree = cKDTree(surface_coords)
+        distances, _ = surface_kdtree.query(fluid_coords, k=1)
+        return distances
+    
+    @staticmethod
+    def log_scaling_distance(distances, eps= 2e-6):
+        log_scaled = np.log1p(distances / eps)
+        log_scaled = log_scaled / log_scaled.max()
+        return log_scaled

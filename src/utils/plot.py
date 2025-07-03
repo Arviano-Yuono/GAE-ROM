@@ -31,6 +31,7 @@ class Plot:
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.model = model
+        self.edge_index = self.train_dataset[0].edge_index if self.train_dataset is not None else None
 
     def plot_airfoil(self, airfoil_color= 'gray'):
         from matplotlib.patches import Polygon
@@ -38,7 +39,9 @@ class Plot:
         # Fill the airfoil surface
         return Polygon(self.surface_points, closed=True, color='gray', zorder=10)
 
-    def plot_velocity_field(self, data: Data, 
+    def plot_velocity_field(self, 
+                            data: Data, 
+                            dim_index = 0,
                             title: str = "Velocity Field", 
                             save = False, 
                             xlim=None, ylim=None, 
@@ -51,18 +54,17 @@ class Plot:
 
         x_coord = data.pos[:,0].detach().cpu().numpy()
         y_coord = data.pos[:,1].detach().cpu().numpy()
-        vel = data.x.detach().cpu().numpy()
+
+        if data.x.ndim == 1:
+            vel = data.x.detach().cpu().numpy()
+        else:
+            vel = data.x.detach().cpu().numpy()[:, dim_index]
         
         num_components = 1 if vel.ndim == 1 else vel.shape[1]
 
-        if num_components == 2:
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
-            axes = [ax1, ax2]
-            comp_titles = ['Ux Component', 'Uy Component']
-        else:
-            fig, ax1 = plt.subplots(1, 1, figsize=(10, 8))
-            axes = [ax1]
-            comp_titles = ['Velocity Component']
+        fig, ax1 = plt.subplots(1, 1, figsize=(10, 8))
+        axes = [ax1]
+        comp_titles = ['Velocity Component']
         
         triang = matplotlib.tri.Triangulation(x_coord, y_coord)
         fmt = ticker.ScalarFormatter(useMathText=True)
@@ -78,6 +80,7 @@ class Plot:
                 v_range = 0.5*np.max([vel_comp.max(), np.abs(vel_comp.min())])
                 print(f"Using v_range: {v_range}")
                 norm = mcolors.Normalize(vmin=vel_comp.min(), vmax=vel_comp.max())
+            print(f"Using v_range: {v_range}")
             
             cs = ax.tricontourf(triang, vel_comp, 100, cmap=colormap, norm=norm)
             divider = make_axes_locatable(ax)
@@ -108,7 +111,7 @@ class Plot:
 
         plt.close(fig)
     
-    def plot_comparison_fields(self, SNAP, device, dataset, params, grid="vertical", comp="_U", airfoil_color = "grey",adjust_title=None, xlim=None, ylim=None, colormap='bwr', save=False):
+    def plot_comparison_fields(self, SNAP, device, dataset, params, dim_index = 0, grid="vertical", comp="_U", airfoil_color = "grey",adjust_title=None, xlim=None, ylim=None, colormap='bwr', save=False):
         """
         Plots the velocity field solution for a given snapshot, comparing ground truth and prediction.
 
@@ -136,11 +139,17 @@ class Plot:
 
         pred, _, _ = self.model(dataset[SNAP].to(device), params.to(device))
         pred = pred.detach().cpu().numpy()
+        if not pred.ndim == 1:
+            pred = pred[:, dim_index]
 
         # Get coordinates and velocity data
         xx = dataset[SNAP].pos[:,0].detach().cpu().numpy()
         yy = dataset[SNAP].pos[:,1].detach().cpu().numpy()
-        vel = dataset[SNAP].x.detach().cpu().numpy().squeeze()
+
+        if dataset[SNAP].x.ndim == 1:
+            vel = dataset[SNAP].x.detach().cpu().numpy()
+        else:
+            vel = dataset[SNAP].x.detach().cpu().numpy().squeeze()[:, dim_index]
 
         fmt = ticker.ScalarFormatter(useMathText=True)
         fmt.set_powerlimits((0, 0))
@@ -151,11 +160,13 @@ class Plot:
         # Plot prediction
         max = np.average([pred.max(), vel.max()])
         min = np.average([pred.min(), vel.min()])
+
         v_range = np.max([np.abs(max), np.abs(min)])
+        print(f"Using v_range: {v_range}")
 
         # Plot ground truth
         norm1 = mcolors.Normalize(vmin=min, vmax=max)
-        cs1 = ax1.tricontourf(triang, vel, 100, cmap=colormap, norm=norm1)
+        cs1 = ax1.tricontourf(triang, vel.squeeze(), 100, cmap=colormap, norm=norm1)
         divider1 = make_axes_locatable(ax1)
         cax1 = divider1.append_axes("right", size="5%", pad=0.1)
         cbar1 = plt.colorbar(cs1, cax=cax1, format=fmt)   
@@ -174,7 +185,7 @@ class Plot:
         if ylim is not None:
             ax1.set_ylim(ylim)
 
-        norm2 = mcolors.Normalize(vmin=-v_range, vmax=v_range)
+        norm2 = mcolors.Normalize(vmin=min, vmax=max)
         cs2 = ax2.tricontourf(triang, pred.squeeze(), 100, cmap=colormap, norm=norm2)
         divider2 = make_axes_locatable(ax2)
         cax2 = divider2.append_axes("right", size="5%", pad=0.1)
@@ -209,6 +220,7 @@ class Plot:
     def plot_velocity_field_error(self, data: Data, 
                                   params,
                                   device, title: str = "Velocity Error Field",
+                                  dim_index = 0,
                                   v_range = None, 
                                   save = False, 
                                   xlim=None, ylim=None, 
@@ -217,13 +229,19 @@ class Plot:
             print("Error: `data.pos` or `data.x` is None. Cannot plot velocity field.")
             return
         import torch.nn.functional as F
-        ground_truth = data.x
+        if not data.x.ndim == 1:
+            ground_truth = data.x[:, dim_index]
+        else:
+            ground_truth = data.x
         pred, _, _ = self.model(data.to(device), params.to(device))
-        pred = pred
+        if not pred.ndim == 1:
+            pred = pred[:, dim_index]
         error = F.mse_loss(target=ground_truth, input=pred, reduction= 'none')
+        mse_error = F.mse_loss(target=ground_truth, input=pred, reduction='mean')
+        print(f"MSE error: {mse_error.item()}")
         error_data = Data(pos=data.pos, x=error).to(device)
 
-        self.plot_velocity_field(data=error_data, title=title, save=save, xlim=xlim, ylim=ylim, v_range=v_range, colormap=colormap)
+        self.plot_velocity_field(data=error_data, title=title, dim_index = dim_index, save=save, xlim=xlim, ylim=ylim, v_range=v_range, colormap=colormap)
         
         
 class PyvistaPlot:

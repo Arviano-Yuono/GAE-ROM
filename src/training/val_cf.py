@@ -26,7 +26,7 @@ def val(model,
         for val_batch in val_loader:
             # Move val_batch to device and ensure correct data type
             val_batch = val_batch.to(device)
-            target = val_batch.x.float()
+            target = val_batch.y.float()
             val_batch.x = val_batch.x.float()
             
             # Get current val_batch parameters
@@ -41,7 +41,7 @@ def val(model,
             start_ind += val_batch.batch_size
             
             # Calculate reconstruction loss
-            reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean')
+            reconstruction_loss = F.mse_loss(input=out, target=target, reduction='mean')
             map_loss = F.mse_loss(est_latent_var, latent_var)
             total_loss = reconstruction_loss + lambda_map * map_loss
 

@@ -5,7 +5,49 @@ import tqdm
 import numpy as np
 import torch
 import pickle
-from src.data import scaling # Ensure this import is correct and module available
+import re
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+
+def scale_dataset(data, scaler=None, method='standard', return_scaler=False):
+    """
+    Scale a dataset of shape [num_samples, num_nodes, num_features].
+
+    Parameters:
+        data (np.ndarray): Input data array of shape [N, V, F]
+        scaler (sklearn Scaler or None): If provided, use this scaler to transform data
+        method (str): Scaling method: 'standard', 'minmax', or 'robust'
+        return_scaler (bool): If True, return the fitted scaler
+
+    Returns:
+        scaled_data (np.ndarray): Scaled data with same shape as input
+        scaler (optional): Fitted scaler object
+    """
+    if not isinstance(data, np.ndarray):
+        raise TypeError("Input data must be a NumPy array")
+
+    N, V, F = data.shape
+    data_flat = data.reshape(-1, F)
+
+    # Fit new scaler if not provided
+    if scaler is None:
+        if method == 'standard':
+            scaler = StandardScaler()
+        elif method == 'minmax':
+            scaler = MinMaxScaler()
+        elif method == 'robust':
+            scaler = RobustScaler()
+        else:
+            raise ValueError(f"Unknown scaling method: {method}")
+        data_scaled_flat = scaler.fit_transform(data_flat)
+    else:
+        data_scaled_flat = scaler.transform(data_flat)
+
+    data_scaled = data_scaled_flat.reshape(N, V, F)
+
+    if return_scaler:
+        return data_scaled, scaler
+    else:
+        return data_scaled
 
 # Helper function to split trajectory indices
 def split_dataset_trajectories(all_trajectory_indices, train_ratio):
@@ -64,59 +106,76 @@ def write_single_h5_file(output_h5_path, trajectories_to_write,
             g['Pressure'] = velocities_for_traj[:, 2].numpy()
             g['Cp'] = velocities_for_traj[:, 3].numpy()
             g['Cf'] = velocities_for_traj[:, 4:6].numpy() # Assuming Cf has 2 components
+            g['Y_Plus'] = velocities_for_traj[:, 6].numpy()
+            g['Nu_Tilde'] = velocities_for_traj[:, 7].numpy()
+            g['Eddy_Viscosity'] = velocities_for_traj[:, 8].numpy()
         
         # Print summary of duplicates
         if duplicate_count > 0:
             print(f"📊 Summary: {duplicate_count} duplicate flow parameter combinations were found and handled.")
         else:
             print(f"📊 Summary: No duplicate flow parameters found.")
-            
 
-def rename_vtu_files(sorted_files, input_directory):
+def find_vtu_files_single_folder(base_directory):
     """
-    Rename VTU files to configuration_1.vtu, configuration_2.vtu, etc. based on their order in the sorted list.
+    Find all flow_Re_XX_alpha_YY.vtu files in a single directory
     
     Args:
-        sorted_files (list): List of sorted VTU filenames
-        input_directory (str): Directory containing the VTU files
-    
-    Returns:
-        list: List of new filenames in the order they were renamed
-    """
-    new_filenames = []
-    
-    for idx, old_filename in enumerate(sorted_files, 1):
-        new_filename = f"configuration_{idx}.vtu"
-        old_path = os.path.join(input_directory, old_filename)
-        new_path = os.path.join(input_directory, new_filename)
+        base_directory (str): Directory containing VTU files
         
-        try:
-            # Check if the new filename already exists
-            if os.path.exists(new_path):
-                print(f"Warning: {new_filename} already exists. Skipping rename.")
-                continue
-                
-            # Rename the file
-            os.rename(old_path, new_path)
-            new_filenames.append(new_filename)
-            #delete the old file
-            print(f"Renamed {old_filename} to {new_filename}")
-            os.remove(old_path)
-            
-        except Exception as e:
-            print(f"Error renaming {old_filename}: {e}")
-            continue
+    Returns:
+        list: List of tuples (file_path, reynolds, alpha) for each flow_Re_XX_alpha_YY.vtu file found
+    """
+    vtu_files = []
     
-    return new_filenames
+    # Get all files in the directory
+    files = os.listdir(base_directory)
+    print(f"Found {len(files)} files in directory")
+    print(f"First few files: {files[:5]}")
+    
+    for file in files:
+        # Only process flow_Re_XX_alpha_YY.vtu files
+        if file.lower().endswith('.vtu') and file.startswith('flow_Re_'):
+            file_path = os.path.join(base_directory, file)
+            
+            # Extract Reynolds number and alpha from filename
+            # Expected format: flow_Re_XX_alpha_YY.vtu
+            base_name = os.path.splitext(file)[0]  # Remove .vtu extension
+            
+            # Pattern to match flow_Re_XX_alpha_YY
+            pattern = r'flow_Re_(\d+(?:\.\d+)?)_alpha_(-?\d+(?:\.\d+)?)'
+            match = re.search(pattern, base_name)
+            
+            if match:
+                reynolds = float(match.group(1))
+                alpha = float(match.group(2))
+                vtu_files.append((file_path, reynolds, alpha))
+                print(f"  ✅ Found: {file} -> Re={reynolds:.1e}, alpha={alpha:.1f}°")
+            else:
+                print(f"  ⚠️ Could not extract flow parameters from filename: {file}")
+    
+    return vtu_files
 
 def vtu_to_h5(vtu_file_directory, 
               output_h5_dir, # Directory to save train.h5, val.h5, and scaler.pkl
               vtu_array_name='Velocity', # Name of the velocity array in VTU files
               train_ratio=0.9, 
-              scaling_type=4, 
-              scaler_name='standard',
-              sorted_vtu_files=None,
+              scaling_method='standard',
               overwrite=False):
+    """
+    Convert VTU files to H5 format with scaling and train/val split.
+    
+    Args:
+        vtu_file_directory (str): Directory containing VTU files with format flow_Re_XX_alpha_YY.vtu
+        output_h5_dir (str): Directory to save train.h5, val.h5, and scaler.pkl
+        vtu_array_name (str): Name of the velocity array in VTU files
+        train_ratio (float): Ratio of data to use for training (0.0 to 1.0)
+        scaling_method (str): Scaling method: 'standard', 'minmax', or 'robust'
+        overwrite (bool): Whether to overwrite existing files
+        
+    Returns:
+        tuple: (train_h5_path, val_h5_path, scaler_path) or (None, None, None) if failed
+    """
     edge_index = None
     train_h5_path = os.path.join(output_h5_dir, 'train.h5')
     val_h5_path = os.path.join(output_h5_dir, 'val.h5')
@@ -130,8 +189,12 @@ def vtu_to_h5(vtu_file_directory,
             print(f"H5 files in {output_h5_dir} already exist. Set overwrite=True to overwrite.")
             return None, None, None
 
-    vtu_files = sorted([f for f in os.listdir(vtu_file_directory) if f.lower().endswith('.vtu')])
-    if not vtu_files:
+    # Find all VTU files in single directory
+    print("Pass 1: Finding all VTU files in directory...")
+    print(f"Searching in directory: {vtu_file_directory}")
+    vtu_files_info = find_vtu_files_single_folder(vtu_file_directory)
+    
+    if not vtu_files_info:
         print(f"No VTU files found in {vtu_file_directory}")
         return None, None, None
 
@@ -139,39 +202,14 @@ def vtu_to_h5(vtu_file_directory,
     trajectory_numbers = [] # List of integer trajectory numbers
     flow_params_map = {} # Dict: {traj_num: (reynolds, alpha)}
 
-    print("Pass 1: Reading all VTU files and extracting data...")
-    for vtu_file in tqdm.tqdm(vtu_files, desc="Reading VTUs"):
+    print("Pass 2: Reading all VTU files and extracting data...")
+    for file_path, reynolds, alpha in tqdm.tqdm(vtu_files_info, desc="Reading VTUs"):
         try:
-            # Extract flow parameters from filename or path
-            # Try to extract from filename first (e.g., "Re4500000_alpha_10.vtu")
-            base_name = os.path.splitext(vtu_file)[0]
+            traj_num = len(trajectory_numbers) + 1  # Use sequential numbering
             
-            # Pattern to match flow_Re_XX_alpha_YY (with underscores around Re)
-            import re
-            pattern = r'flow_Re_(\d+(?:\.\d+)?)_alpha_(-?\d+(?:\.\d+)?)'
-            match = re.search(pattern, base_name)
-            
-            if match:
-                reynolds = float(match.group(1))
-                alpha = float(match.group(2))
-                traj_num = len(trajectory_numbers) + 1  # Use sequential numbering
-                print(f"  ✅ Extracted: Re={reynolds:.1e}, alpha={alpha:.1f}° from {vtu_file}")
-            else:
-                # Fallback to old method
-                traj_num_str = ''.join(filter(str.isdigit, base_name))
-                if not traj_num_str:
-                    print(f"Warning: Could not extract flow parameters from {vtu_file}. Skipping.")
-                    continue
-                
-                traj_num = int(traj_num_str)
-                # For backward compatibility, use default values
-                reynolds = 1e6  # Default Reynolds number
-                alpha = 0.0     # Default angle of attack
-                print(f"  ⚠️ Using defaults: Re={reynolds:.1e}, alpha={alpha:.1f}° for {vtu_file}")
-            
-            grid = pv.UnstructuredGrid(os.path.join(vtu_file_directory, vtu_file))
+            grid = pv.UnstructuredGrid(file_path)
             if grid is None or grid.points is None or vtu_array_name not in grid.point_data:
-                 print(f"Warning: Failed to read {vtu_file} correctly or missing data. Skipping.")
+                 print(f"Warning: Failed to read {file_path} correctly or missing data. Skipping.")
                  continue
 
             #coordinates
@@ -184,23 +222,24 @@ def vtu_to_h5(vtu_file_directory,
                     edge_points = edges.lines.reshape(-1, 3)[1:] # Skip first element which is line count
                     edge_index = edge_points[:,1:].reshape(2, -1)
                 else:
-                    print(f"Warning: Could not extract edge connectivity from {vtu_file}")
+                    print(f"Warning: Could not extract edge connectivity from {file_path}")
                     edge_index = None
-            
+            #features: coord, ux, uy, Y_plus, nutilde, eddy viscosity
+            #target: Cf, Cp
             #velocity
             raw_velocities = np.array(grid.point_data[vtu_array_name], dtype=np.float32)
-            surface_mask = raw_velocities[:,0] == 0.0
             raw_pressure = np.array(grid.point_data['Pressure'], dtype=np.float32)
             cp = np.array(grid['Pressure_Coefficient'], dtype=np.float32)
-            cp[~surface_mask] = 0.0 # Set non-surface points to 0
             cf = np.array(grid['Skin_Friction_Coefficient'], dtype=np.float32)[:,:2]
-            cf[~surface_mask] = 0.0 # Set non-surface points to 0
+            Y_plus = np.array(grid['Y_Plus'], dtype=np.float32)
+            nutilde = np.array(grid['Nu_Tilde'], dtype=np.float32)
+            eddy_viscosity = np.array(grid['Eddy_Viscosity'], dtype=np.float32)
 
-            velocities_2d = np.concat([raw_velocities[:, :2], raw_pressure[:, None], cp[:, None], cf[:, :2]], axis=1)
+            velocities_2d = np.concatenate([raw_velocities[:, :2], raw_pressure[:, None], cp[:, None], cf[:, :2], Y_plus[:, None], nutilde[:, None], eddy_viscosity[:, None]], axis=1)
             
             # Check for consistent number of nodes
             if trajectory_numbers and coordinates.shape[0] != all_trajectory_data_raw[trajectory_numbers[0]]['coordinates'].shape[0]:
-                print(f"Error: Inconsistent number of nodes in {vtu_file}. Expected {all_trajectory_data_raw[trajectory_numbers[0]]['coordinates'].shape[0]}, got {coordinates.shape[0]}. Skipping file.")
+                print(f"Error: Inconsistent number of nodes in {file_path}. Expected {all_trajectory_data_raw[trajectory_numbers[0]]['coordinates'].shape[0]}, got {coordinates.shape[0]}. Skipping file.")
                 continue
 
             trajectory_numbers.append(traj_num)
@@ -211,11 +250,11 @@ def vtu_to_h5(vtu_file_directory,
                 'velocities': torch.tensor(velocities_2d, dtype=torch.float32)
             }
         except Exception as e:
-            print(f"Error processing file {vtu_file}: {e}. Skipping.")
+            print(f"Error processing file {file_path}: {e}. Skipping.")
             continue
             
     if not trajectory_numbers:
-        print("No valid trajectory data could be extracted after Pass 1.")
+        print("No valid trajectory data could be extracted after Pass 2.")
         return None, None, None
     
     # Print summary of flow parameters
@@ -228,16 +267,12 @@ def vtu_to_h5(vtu_file_directory,
     trajectory_numbers.sort() # Ensure consistent order before stacking
 
     # Stack all velocities for scaling: [total_trajectories, num_nodes, num_velocity_components]
-    # num_velocity_components can be 1 or 2
     stacked_velocities_list = [all_trajectory_data_raw[tn]['velocities'] for tn in trajectory_numbers]
     
     # Validate shapes before stacking
     first_tensor_shape = stacked_velocities_list[0].shape
     if not all(t.shape == first_tensor_shape for t in stacked_velocities_list):
         print("Error: Velocity tensors have inconsistent shapes across trajectories. Cannot stack for scaling.")
-        # Debug inconsistent shapes:
-        # for i, tn in enumerate(trajectory_numbers):
-        # print(f"Traj {tn}, shape: {all_trajectory_data_raw[tn]['velocities'].shape}")
         return None, None, None
     
     num_velocity_components = first_tensor_shape[1]
@@ -255,34 +290,34 @@ def vtu_to_h5(vtu_file_directory,
         train_indices_in_stacked_tensor = [trajectory_numbers.index(tn) for tn in train_traj_nums]
         train_velocities_for_scaler = velocities_to_scale[train_indices_in_stacked_tensor]
         
-        original_shape_train = train_velocities_for_scaler.shape # [num_train_traj, num_nodes, num_components]
-        reshaped_train_velocities = train_velocities_for_scaler.reshape(-1, num_velocity_components) # [N_train_samples * num_nodes, num_components]
+        # Convert to numpy for scale_dataset function
+        train_velocities_numpy = train_velocities_for_scaler.numpy()
         
-        print(f"Fitting scaler on training data of shape: {reshaped_train_velocities.shape}")
-        scaler, _ = scaling.tensor_scaling(reshaped_train_velocities, scaling_type, scaler_name) # Fit scaler
+        print(f"Fitting scaler on training data of shape: {train_velocities_numpy.shape}")
+        
+        # Use the scale_dataset function
+        scaled_train_velocities, scaler = scale_dataset(
+            train_velocities_numpy, 
+            scaler=None, 
+            method=scaling_method, 
+            return_scaler=True
+        )
         
         if scaler:
             print("Scaler fitted. Applying to the entire dataset.")
-            original_shape_all = velocities_to_scale.shape # [total_traj, num_nodes, num_components]
-            reshaped_all_velocities = velocities_to_scale.reshape(-1, num_velocity_components)
+            # Convert all velocities to numpy for scaling
+            all_velocities_numpy = velocities_to_scale.numpy()
             
-            # Use the transform method of the fitted scaler
-            if isinstance(scaler, list):
-                # Handle case where scaler is a list (e.g., for scaling_type 3 or 4)
-                print("Warning: Scaler is a list. Using first scaler for transformation.")
-                if len(scaler) > 0 and hasattr(scaler[0], 'transform'):
-                    scaled_transformed_data = scaler[0].transform(reshaped_all_velocities.numpy())
-                    scaled_all_velocities_tensor = torch.tensor(scaled_transformed_data, dtype=torch.float32).reshape(original_shape_all)
-                else:
-                    print("Warning: First scaler in list does not have 'transform' method. Skipping scaling.")
-                    scaled_all_velocities_tensor = velocities_to_scale
-            elif hasattr(scaler, 'transform'):
-                scaled_transformed_data = scaler.transform(reshaped_all_velocities.numpy())
-                scaled_all_velocities_tensor = torch.tensor(scaled_transformed_data, dtype=torch.float32).reshape(original_shape_all)
-            else:
-                print("Warning: Fitted scaler does not have a 'transform' method. Scaling might not be applied correctly. Check 'src.data.scaling' module.")
-                # Fallback or error based on how scaling module should behave
-                scaled_all_velocities_tensor = velocities_to_scale
+            # Apply scaling to entire dataset
+            scaled_all_velocities_numpy = scale_dataset(
+                all_velocities_numpy, 
+                scaler=scaler, 
+                method=scaling_method, 
+                return_scaler=False
+            )
+            
+            # Convert back to tensor
+            scaled_all_velocities_tensor = torch.tensor(scaled_all_velocities_numpy, dtype=torch.float32)
         else:
             print("Warning: Scaler fitting failed. Scaling will be skipped.")
 
@@ -291,7 +326,6 @@ def vtu_to_h5(vtu_file_directory,
         with open(scaler_path, 'wb') as f_scaler:
             pickle.dump(scaler, f_scaler)
         print(f"Scaler saved to {scaler_path}")
-
 
     # Prepare data maps for writing (maps trajectory number to its data)
     all_scaled_velocities_map = {tn: scaled_all_velocities_tensor[trajectory_numbers.index(tn)] for tn in trajectory_numbers}

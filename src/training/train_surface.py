@@ -92,7 +92,7 @@ def train(model: GAE,
             optimizer.zero_grad()
             # Move batch to device and ensure correct data type
             batch = batch.to(device)
-            target = batch.x.float()
+            target = batch.y.float()
             batch.x = batch.x.float()
             
             # Get current batch parameters

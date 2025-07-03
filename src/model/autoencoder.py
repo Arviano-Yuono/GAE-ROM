@@ -32,7 +32,7 @@ class LinearAutoencoder(nn.Module):
             self.decoder.add_module(f'decoder_layer_{i}', nn.Linear(self.config['decoder_layers'][i], self.config['decoder_layers'][i+1]))
             self.decoder.add_module(f'decoder_layer_{i}_'+self.act_name, self.act)
         self.decoder.add_module(f'decoder_layer_output', nn.Linear(self.config['decoder_layers'][-1], self.input_dim))
-        self.decoder.add_module(f'decoder_layer_output_'+self.act_name, self.act)
+        # self.decoder.add_module(f'decoder_layer_output_'+self.act_name, self.act)
 
     def forward(self, x, is_verbose: bool = False):
         shape = x.shape

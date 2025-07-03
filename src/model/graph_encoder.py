@@ -27,7 +27,7 @@ class GraphEncoder(torch.nn.Module):
                 x = conv(x = x, edge_index = data.edge_index)
             if self.convolution_layers.is_skip_connection:
                 x = x + data.x
-            if i != len(self.convolution_layers.convs) - 2:
+            if i < (len(self.convolution_layers.convs) - 1):
                 x = self.convolution_layers.act(x)
             if norm is not None:
                 x = norm(x)

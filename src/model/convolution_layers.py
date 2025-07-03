@@ -1,7 +1,7 @@
 from torch import nn
 import torch.nn.functional as F
 import torch_geometric.nn as gnn
-from torch_geometric.nn import LayerNorm
+from torch_geometric.nn import LayerNorm, BatchNorm
 
 from src.utils.commons import get_activation_function
 

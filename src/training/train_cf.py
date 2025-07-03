@@ -92,7 +92,7 @@ def train(model: GAE,
             optimizer.zero_grad()
             # Move batch to device and ensure correct data type
             batch = batch.to(device)
-            target = batch.x.float()
+            target = batch.y.float()
             batch.x = batch.x.float()
             
             # Get current batch parameters
@@ -107,7 +107,7 @@ def train(model: GAE,
             start_ind += batch.batch_size
 
             # Calculate losses
-            reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean')
+            reconstruction_loss = F.mse_loss(input=out, target=target, reduction='mean')
 
             map_loss = F.mse_loss(est_latent_var, latent_var)
             total_loss = reconstruction_loss + config['lambda_map'] * map_loss

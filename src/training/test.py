@@ -23,11 +23,12 @@ def test(model: GAE,
             data = data.to(device)
             latent_var = model.mapping(params)
             decoded_x = model.linear_autoencoder.decoder(latent_var)
-            pred = model.graph_decoder(data, decoded_x)
+            decoder_input_shape = model.graph_decoder.config['convolution_layers']['hidden_channels'][0]
+            pred = model.graph_decoder(data, decoded_x.reshape([data.x.shape[0], decoder_input_shape]), is_verbose=verbose)
             test_results.append(pred)
             index += 1
             for error in error_func:
-                total_error[f"total_{error.__name__}"] += error(pred, data.x).item()
+                total_error[f"total_{error.__name__}"] += error(pred, data.y).item()
                 
     for error, value in total_error.items():
         total_error[error] = value / (index + 1)

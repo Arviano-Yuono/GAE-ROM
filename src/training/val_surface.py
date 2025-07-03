@@ -26,7 +26,7 @@ def val(model,
         for val_batch in val_loader:
             # Move val_batch to device and ensure correct data type
             val_batch = val_batch.to(device)
-            target = val_batch.x.float()
+            target = val_batch.y.float()
             val_batch.x = val_batch.x.float()
             
             # Get current val_batch parameters
