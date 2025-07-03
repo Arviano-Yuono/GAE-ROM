@@ -56,7 +56,8 @@ def single_test(model: GAE,
     with torch.no_grad():
         latent_var = model.mapping(test_params)
         decoded_x = model.linear_autoencoder.decoder(latent_var)
-        pred_x = model.graph_decoder(test_data, decoded_x)
+        decoder_input_shape = model.graph_decoder.config['convolution_layers']['hidden_channels'][0]
+        pred_x = model.graph_decoder(test_data, decoded_x.reshape([test_data.x.shape[0], decoder_input_shape]))
 
     if save_results:
         torch.save(test_data, save_path + f"test_data_Re{test_params[0]}_alpha{test_params[1]}.pt")

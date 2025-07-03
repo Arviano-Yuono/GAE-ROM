@@ -3,23 +3,23 @@ config:
   device: cuda
   root_dir: ./ # project root dir
   dataset_dir: dataset/flows # dataset dir
-  split_dir: dataset/high_h5_files # split dir
+  split_dir: dataset/final_h5_files # split dir
   output_dir: ./output/ # output dir
-  mesh_file: dataset\high_flows\Re1500000\Re1500000_alpha_0\surface_flow.vtu
+  mesh_file: dataset\full\flow_Re_400000_alpha_10.vtu
   data_sample: 1000 # number of data samples to use for training
   variable_scaling: true
   scaler_name: standard
   scaling_type: 4
   inverse_scaling: true
-  dim_pde: 5
-  variable: Cf
+  dim_pde: &dim_pde 6
+  variable: full
 
 preprocessing:
   normalization_method: zscore # ['zscore', 'magnitude', robust]
   with_edge_features: true
 
 conv_base: &conv_base
-  type: Cheb
+  type: SAGE
   act: ELU # ReLU, Tanh, Sigmoid
   head: 4
   dropout: 0
@@ -27,37 +27,37 @@ conv_base: &conv_base
   K: 5
   dim: 1
   num_layers: 5
-  is_batch_norm: false
+  is_batch_norm: true
   is_skip_connection: false
 
 model:
   encoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [5, 64, 64, 64, 32]
+      hidden_channels: [6, 32, 32, 32, 8]
 
   decoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [32, 64, 64, 64, 3]
+      hidden_channels: [8, 32, 32, 32, 3]
 
   autoencoder:
     is_autoencoder: true
-    encoder_layers: [1000, 400, 200]
-    decoder_layers: [200, 400, 1000]
-    latent_dim: 40
+    encoder_layers: [2000, 1000, 200]
+    decoder_layers: [200, 1000, 2000]
+    latent_dim: 100
     act: ELU # ReLU, Tanh, Sigmoid
     dropout: 0 # probability
 
   maptovec:
     is_maptovec: true
-    layer_vec: [2, 100, 100, 100, 100, 100, 40]
+    layer_vec: [2, 200, 200, 200, 200, 100]
     act: Tanh # ReLU, Tanh, Sigmoid
 
 training:
-  model_name: NACA0012_ChebConv_CF
+  model_name: NACA0012_SAGEConv_VEL_P
   num_workers: 0
-  epochs: 5000
+  epochs: 1000
   batch_size: 8
   print_train: 1
   amp: false
@@ -66,7 +66,7 @@ training:
   lambda_map: 1
   optimizer:
     type: AdamW
-    learning_rate: 0.001
+    learning_rate: 0.0001
     weight_decay: 0.00001
 
   scheduler:
