@@ -24,7 +24,7 @@ conv_base: &conv_base
   head: 4
   dropout: 0
   kernel_size: 5
-  K: 5
+  K: 7
   dim: 1
   num_layers: 5
   is_batch_norm: true

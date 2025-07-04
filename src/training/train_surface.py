@@ -6,7 +6,7 @@ from src.utils.commons import get_config, save_model, is_scheduler_per_batch
 import torch
 import torch_geometric
 import torch.nn.functional as F
-
+from src.utils.metrics import relative_error
 import tqdm
 
 
@@ -107,8 +107,19 @@ def train(model: GAE,
             start_ind += batch.batch_size
 
             # Calculate losses
-            reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean') * lambda_surface \
-            + F.mse_loss(input=out[~surface_mask], target=target[~surface_mask], reduction='mean')
+            # reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean') * lambda_surface \
+            # + F.mse_loss(input=out[~surface_mask], target=target[~surface_mask], reduction='mean')
+
+            # if latent_var is None or est_latent_var is None:
+            #     map_loss = torch.tensor(0., device=device)
+            # else:
+            #     # Ensure latent_var and est_latent_var are float32
+            #     latent_var = latent_var.float()
+            #     est_latent_var = est_latent_var.float()
+            #     map_loss = F.mse_loss(est_latent_var, latent_var)
+
+            reconstruction_loss = relative_error(pred=out[surface_mask], target=target[surface_mask]) * lambda_surface \
+            + relative_error(pred=out[~surface_mask], target=target[~surface_mask])
 
             if latent_var is None or est_latent_var is None:
                 map_loss = torch.tensor(0., device=device)
@@ -116,7 +127,7 @@ def train(model: GAE,
                 # Ensure latent_var and est_latent_var are float32
                 latent_var = latent_var.float()
                 est_latent_var = est_latent_var.float()
-                map_loss = F.mse_loss(est_latent_var, latent_var)
+                map_loss = relative_error(pred = est_latent_var, target=latent_var)
                 
             total_loss = reconstruction_loss + config['lambda_map'] * map_loss
             
