@@ -1,0 +1,88 @@
+config:
+  seed: 10
+  device: cuda
+  root_dir: ./ # project root dir
+  dataset_dir: dataset/flows # dataset dir
+  split_dir: dataset/final_h5_files # split dir
+  output_dir: ./output/ # output dir
+  mesh_file: dataset\full\flow_Re_400000_alpha_10.vtu
+  data_sample: 1000 # number of data samples to use for training
+  variable_scaling: true
+  scaler_name: standard
+  scaling_type: 4
+  inverse_scaling: true
+  dim_pde: &dim_pde 6
+  variable: full
+
+preprocessing:
+  normalization_method: zscore # ['zscore', 'magnitude', robust]
+  with_edge_features: true
+
+conv_base: &conv_base
+  type: Cheb
+  act: ELU # ReLU, Tanh, Sigmoid
+  head: 4
+  dropout: 0
+  kernel_size: 5
+  K: 7
+  dim: 1
+  num_layers: 5
+  is_batch_norm: true
+  is_skip_connection: false
+
+model:
+  encoder:
+    convolution_layers:
+      <<: *conv_base
+      hidden_channels: [6, 32, 32, 32, 8]
+
+  decoder:
+    convolution_layers:
+      <<: *conv_base
+      hidden_channels: [8, 32, 32, 32, 3]
+
+  autoencoder:
+    is_autoencoder: true
+    encoder_layers: [2000, 1000, 200]
+    decoder_layers: [200, 1000, 2000]
+    latent_dim: 100
+    act: ELU # ReLU, Tanh, Sigmoid
+    dropout: 0 # probability
+
+  maptovec:
+    is_maptovec: true
+    layer_vec: [2, 200, 200, 200, 200, 100]
+    act: Tanh # ReLU, Tanh, Sigmoid
+
+training:
+  model_name: NACA0012_ChebConv_VEL_P
+  num_workers: 0
+  epochs: 1000
+  batch_size: 8
+  print_train: 1
+  amp: false
+  single_batch_run: false
+  save_best_model: true
+  lambda_map: 1
+  optimizer:
+    type: AdamW
+    learning_rate: 0.0001
+    weight_decay: 0.00001
+
+  scheduler:
+    type: MultiStepLR
+    milestones: []
+    gamma: 0.0001
+    T_max: 100
+    eta_min: 0.00001
+
+  early_stopping:
+    early_stopping: 10
+    patience: 10
+
+  loss:
+    type: rmse # [mse, rmse]
+
+  metric:
+    type: rmse # [mse, rmse]
+
