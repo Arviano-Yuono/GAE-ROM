@@ -3,16 +3,16 @@ config:
   device: cuda
   root_dir: ./ # project root dir
   dataset_dir: dataset/flows # dataset dir
-  split_dir: dataset/final_final_h5_files/surface # split dir
+  split_dir: dataset/final_final_h5_files # split dir
   output_dir: ./output/ # output dir
-  mesh_file: dataset\rans_high\full_final\Re5000000_alpha_5\surface_flow.vtu
+  mesh_file: dataset\full\flow_Re_400000_alpha_10.vtu
   data_sample: 1000 # number of data samples to use for training
   variable_scaling: true
   scaler_name: standard
   scaling_type: 4
   inverse_scaling: true
-  dim_pde: 8
-  variable: Cf_full
+  dim_pde: &dim_pde 6
+  variable: full
 
 preprocessing:
   normalization_method: zscore # ['zscore', 'magnitude', robust]
@@ -24,106 +24,40 @@ conv_base: &conv_base
   head: 4
   dropout: 0
   kernel_size: 5
-  K: 5
+  K: 7
   dim: 1
   num_layers: 5
   is_batch_norm: true
   is_skip_connection: false
-  aggregators: ["mean", "min", "max", "std"]
-  scalers: ["identity", "amplification", "attenuation"]
-  deg:
-    [
-      36542,
-      0,
-      0,
-      484,
-      3388,
-      5082,
-      6776,
-      4114,
-      2904,
-      2178,
-      0,
-      484,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-    ]
+
 model:
   encoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [8, 8, 8, 8, 10]
+      hidden_channels: [6, 16, 3]
+      # hidden_channels: [6, 32, 32, 32, 8]
 
   decoder:
     convolution_layers:
       <<: *conv_base
-      hidden_channels: [10, 8, 8, 8, 3]
+      hidden_channels: [3, 16, 3]
+      # hidden_channels: [8, 32, 32, 32, 3]
 
   autoencoder:
     is_autoencoder: true
-    encoder_layers: [1000, 400, 200]
-    decoder_layers: [200, 400, 1000]
-    latent_dim: 50
+    encoder_layers: [2000, 1000, 200]
+    decoder_layers: [200, 1000, 2000]
+    latent_dim: 100
     act: ELU # ReLU, Tanh, Sigmoid
     dropout: 0 # probability
 
   maptovec:
     is_maptovec: true
-    layer_vec: [2, 200, 200, 200, 200, 200, 50]
+    layer_vec: [2, 200, 200, 200, 200, 100]
     act: Tanh # ReLU, Tanh, Sigmoid
 
 training:
-  model_name: airfoil_cheb
+  model_name: NACA0012_GATConv_VEL_P
   num_workers: 0
   epochs: 1000
   batch_size: 8
@@ -134,7 +68,7 @@ training:
   lambda_map: 1
   optimizer:
     type: AdamW
-    learning_rate: 0.001
+    learning_rate: 0.0001
     weight_decay: 0.00001
 
   scheduler:
@@ -153,4 +87,3 @@ training:
 
   metric:
     type: rmse # [mse, rmse]
-
