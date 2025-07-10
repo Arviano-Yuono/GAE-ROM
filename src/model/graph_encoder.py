@@ -20,19 +20,20 @@ class GraphEncoder(torch.nn.Module):
             # if is_verbose:
             #     print(f"Convolution layer {i}: {conv.__class__.__name__}, input shape: {x.shape}, edge_index shape: {data.edge_index.shape}, edge_attr shape: {data.edge_attr.shape if data.edge_attr is not None else 'None'}")
             if self.convolution_layers.config['type'] in ['Cheb', 'GCN']:
-                x = conv(x = x.float(), edge_index = data.edge_index, edge_weight = data.edge_weight)
+                x_new = conv(x = x.float(), edge_index = data.edge_index, edge_weight = data.edge_weight)
             elif self.convolution_layers.config['type'] in ['GAT', 'GMM', 'PNA']:
-                x = conv(x = x, edge_index = data.edge_index, edge_attr = data.edge_attr)
+                x_new = conv(x = x, edge_index = data.edge_index, edge_attr = data.edge_attr)
             elif self.convolution_layers.config['type'] in ['SAGE']:
-                x = conv(x = x, edge_index = data.edge_index)
-            if self.convolution_layers.is_skip_connection:
-                x = x + data.x
+                x_new = conv(x = x, edge_index = data.edge_index)
+            if self.convolution_layers.is_skip_connection and x_new.shape == x.shape:
+                x_new = x_new + x
             if i < (len(self.convolution_layers.convs) - 1):
-                x = self.convolution_layers.act(x)
+                x_new = self.convolution_layers.act(x_new)
             if norm is not None:
-                x = norm(x)
-            x = self.convolution_layers.dropout(x)
+                x_new = norm(x_new)
+            x_new = self.convolution_layers.dropout(x_new)
             # print(f"x shape after conv: {x.shape}")
+            x = x_new
         return x
         
     def reset_parameters(self):

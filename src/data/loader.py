@@ -17,6 +17,7 @@ class GraphDataset(Dataset):
         self.dataset_dir = config['dataset_dir']
         self.variable = config['variable']
         self.dim_pde = config['dim_pde']
+        self.with_edge_features = config.get('with_edge_features', True)
 
         # load data
         self.h5_file = h5py.File(os.path.join(config['split_dir'], f'{split}.h5'), 'r')
@@ -38,9 +39,14 @@ class GraphDataset(Dataset):
 
         # get edge attr and weights
         self.edge_list = self.h5_file[self.file_keys[0]]['edge_index'][:] # Convert to NumPy array
-        self.edge_features = self.compute_edge_attr(self.edge_list)
-        self.edge_weights = self.compute_edge_weights(self.edge_features)
 
+        if self.with_edge_features:
+            self.edge_features = self.compute_edge_attr(self.edge_list)
+            self.edge_weights = self.compute_edge_weights(self.edge_features)
+
+        else:
+            self.edge_features = torch.zeros(self.edge_list.shape[1], 1)
+            self.edge_weights = torch.ones(self.edge_list.shape[1])
 
     def __del__(self):
         if hasattr(self, 'h5_file'):
@@ -66,8 +72,8 @@ class GraphDataset(Dataset):
                 implicit_distance = self.log_scaled_distannce
                 features = np.concatenate([uy.reshape(-1, 1), implicit_distance.reshape(-1, 1)], axis=1)
                 target = uy
-            elif self.variable == 'Pressure':
-                p = self.h5_file[file_key]['Pressure'][:].reshape(-1, 1) # Convert to NumPy array
+            elif self.variable == 'Cp':
+                p = self.h5_file[file_key]['Cp'][:].reshape(-1, 1) # Convert to NumPy array
                 implicit_distance = self.log_scaled_distannce
                 features = np.concatenate([p.reshape(-1, 1), implicit_distance.reshape(-1, 1)], axis=1)  # Concatenate pressure and distance
                 target = p
@@ -80,18 +86,79 @@ class GraphDataset(Dataset):
                 features = np.sqrt(ux**2 + uy**2)  # Compute magnitude of velocity
             else:
                 raise ValueError(f"Unknown variable: {self.variable}")
-            
-        elif self.dim_pde == 2:
-            if self.variable in ['X', 'Y']:
-            # Load 1D arrays and reshape them to 2D before concatenating
-                ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-                uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-                features = np.concatenate([ux, uy], axis=1)  # Shape: [num_nodes, 2]
-        
+
+        elif self.variable == 're_p':
+            cp = self.h5_file[file_key]['Cp'][:].reshape(-1, 1)
+            implicit_distance = self.log_scaled_distannce.reshape(-1, 1)
+            log_re = (np.log10(float(params[0].item())) - 4.0) / (6.0 - 5.0)        # → [0, 1]
+            re = log_re * np.ones(cp.shape)  # Assuming params[0] is Re
+            alpha_norm = (np.deg2rad(float(params[1].item())) + np.deg2rad(0)) / (np.deg2rad(20) + np.deg2rad(0))  # → [0, 1]
+            alpha = alpha_norm * np.ones(cp.shape)
+            x = self.coordinates[:, 0].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            y = self.coordinates[:, 1].reshape(-1, 1)  # Shape
+            features = np.concatenate([x, y, implicit_distance, re.reshape(-1, 1), alpha.reshape(-1, 1)], axis=1)
+            target = cp  # Target is the x-velocity
+
+
+        elif self.variable == 're_y':
+            ux = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)
+            implicit_distance = self.log_scaled_distannce.reshape(-1, 1)
+            log_re = (np.log10(float(params[0].item())) - 4.0) / (6.0 - 5.0)        # → [0, 1]
+            re = log_re * np.ones(ux.shape)  # Assuming params[0] is Re
+            alpha_norm = (np.deg2rad(float(params[1].item())) + np.deg2rad(0)) / (np.deg2rad(20) + np.deg2rad(0))  # → [0, 1]
+            alpha = alpha_norm * np.ones(ux.shape)
+            x = self.coordinates[:, 0].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            y = self.coordinates[:, 1].reshape(-1, 1)  # Shape
+            features = np.concatenate([x, y, implicit_distance, re.reshape(-1, 1), alpha.reshape(-1, 1)], axis=1)
+            target = ux  # Target is the x-velocity
+
+        elif self.variable == 're_x':
+            Uy = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)
+            implicit_distance = self.log_scaled_distannce.reshape(-1, 1)
+            log_re = (np.log10(float(params[0].item())) - 4.0) / (6.0 - 5.0)        # → [0, 1]
+            re = log_re * np.ones(Uy.shape)  # Assuming params[0] is Re
+            alpha_norm = (np.deg2rad(float(params[1].item())) + np.deg2rad(0)) / (np.deg2rad(20) + np.deg2rad(0))  # → [0, 1]
+            alpha = alpha_norm * np.ones(Uy.shape)
+            x = self.coordinates[:, 0].reshape(-1, 1)  # Shape: [num_nodes, 1]
+            y = self.coordinates[:, 1].reshape(-1, 1)  # Shape
+            features = np.concatenate([x, y, implicit_distance, re.reshape(-1, 1), alpha.reshape(-1, 1)], axis=1)
+            target = Uy  # Target is the x-velocity
+
+        elif self.variable == 'simple_cp':
+            cp = self.h5_file[file_key]['Cp'][:].reshape(-1, 1)
+            features = cp
+            target = cp
+
+        elif self.variable == 'simple_ux_uy':
+            ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)
+            uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)
+            features = np.concatenate([ux, uy], axis=1)
+            target = np.concatenate([ux, uy], axis=1)
+
+        elif self.variable == 'vel_rev':
+            ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)
+            uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)
+            cp = self.h5_file[file_key]['Cp'][:].reshape(-1, 1)
+            dist_log_scaled = self.log_scaled_distannce.reshape(-1,1)  # Log scaling the distances
+            re = np.log10(float(params[0].item()) * np.ones(ux.shape)) # Assuming params[0] is Re
+            alpha = np.deg2rad(float(params[1].item()) * np.ones(ux.shape)) # Assuming params[1] is alpha
+            features = np.concatenate([ux, uy, cp, dist_log_scaled, re, alpha], axis=1)  # Shape: [num_nodes, 6]
+            target = np.concatenate([ux, uy], axis=1)
+
+        elif self.variable == 'full_rev':
+            ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)
+            uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)
+            pressure = self.h5_file[file_key]['Cp'][:].reshape(-1, 1)
+            dist_log_scaled = self.log_scaled_distannce.reshape(-1,1)  # Log scaling the distances
+            re = np.log10(float(params[0].item()) * np.ones(ux.shape)) # Assuming params[0] is Re
+            alpha = np.deg2rad(float(params[1].item()) * np.ones(ux.shape)) # Assuming params[1] is alpha
+            features = np.concatenate([ux, uy, pressure, dist_log_scaled, re, alpha], axis=1)  # Shape: [num_nodes, 5]
+            target = np.concatenate([ux, uy, pressure], axis=1)  # Shape: [num_nodes, 3]
+
         elif self.variable == 'full':
             ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)
             uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)
-            pressure = self.h5_file[file_key]['Pressure'][:].reshape(-1, 1)
+            pressure = self.h5_file[file_key]['Cp'][:].reshape(-1, 1)
             nu_tilde = self.h5_file[file_key]['Nu_Tilde'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
             eddie_viscosity = self.h5_file[file_key]['Eddy_Viscosity'][:].reshape(-1, 1)
             implicit_distance = self.compute_implicit_distance(fluid_coords=self.coordinates, 
@@ -121,12 +188,6 @@ class GraphDataset(Dataset):
                 self.edge_features = self.compute_edge_attr(self.edge_list)
                 self.edge_weights = self.compute_edge_weights(self.edge_features) 
 
-        elif self.dim_pde == 3:
-            ux = self.h5_file[file_key]['Ux'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            uy = self.h5_file[file_key]['Uy'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            pressure = self.h5_file[file_key]['Pressure'][:].reshape(-1, 1)  # Shape: [num_nodes, 1]
-            features = np.concatenate([ux, uy, pressure], axis=1)  # Shape: [num_nodes, 3]
-        
         #scale features
         if features is None:
             raise ValueError("features are not loaded, cannot scale.")

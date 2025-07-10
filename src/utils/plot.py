@@ -1,3 +1,4 @@
+from ast import Param
 import os
 import matplotlib.pyplot as plt
 import numpy as np
@@ -111,111 +112,189 @@ class Plot:
 
         plt.close(fig)
     
-    def plot_comparison_fields(self, SNAP, device, dataset, params, dim_index = 0, grid="vertical", comp="_U", airfoil_color = "grey",adjust_title=None, xlim=None, ylim=None, colormap='bwr', save=False):
-        """
-        Plots the velocity field solution for a given snapshot, comparing ground truth and prediction.
+    # def plot_comparison_fields(self, SNAP, device, dataset, params, dim_index = 0, grid="vertical", comp="_U", airfoil_color = "grey",adjust_title=None, xlim=None, ylim=None, colormap='bwr', save=False):
+    #     """
+    #     Plots the velocity field solution for a given snapshot, comparing ground truth and prediction.
 
-        Args:
-            SNAP: integer value indicating the snapshot to be plotted
-            pred: predicted values
-            dataset: dataset containing the ground truth
-            params: array of shape (num_snap,), containing the parameters associated with each snapshot
-            grid: str, either "horizontal" or "vertical" for subplot arrangement
-            comp: str, component suffix for the plot
-            adjust_title: float, optional adjustment for title position
-        """
-        # Create figure with 2 subplots first
-        if grid == "horizontal":
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
-            y0 = 0.7
-        elif grid == "vertical":
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 16))
-            y0 = 1.1
-        else:
-            raise ValueError("grid argument must be 'horizontal' or 'vertical'")
+    #     Args:
+    #         SNAP: integer value indicating the snapshot to be plotted
+    #         pred: predicted values
+    #         dataset: dataset containing the ground truth
+    #         params: array of shape (num_snap,), containing the parameters associated with each snapshot
+    #         grid: str, either "horizontal" or "vertical" for subplot arrangement
+    #         comp: str, component suffix for the plot
+    #         adjust_title: float, optional adjustment for title position
+    #     """
+    #     # Create figure with 2 subplots first
+    #     if grid == "horizontal":
+    #         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+    #         y0 = 0.7
+    #     elif grid == "vertical":
+    #         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 16))
+    #         y0 = 1.1
+    #     else:
+    #         raise ValueError("grid argument must be 'horizontal' or 'vertical'")
         
-        if adjust_title is not None:
-            y0 = adjust_title
+    #     if adjust_title is not None:
+    #         y0 = adjust_title
 
+    #     pred, _, _ = self.model(dataset[SNAP].to(device), params.to(device))
+    #     pred = pred.detach().cpu().numpy()
+    #     if not pred.ndim == 1:
+    #         pred = pred[:, dim_index]
+
+    #     # Get coordinates and velocity data
+    #     xx = dataset[SNAP].pos[:,0].detach().cpu().numpy()
+    #     yy = dataset[SNAP].pos[:,1].detach().cpu().numpy()
+
+    #     if dataset[SNAP].x.ndim == 1:
+    #         vel = dataset[SNAP].x.detach().cpu().numpy()
+    #     else:
+    #         vel = dataset[SNAP].x.detach().cpu().numpy().squeeze()[:, dim_index]
+
+    #     fmt = ticker.ScalarFormatter(useMathText=True)
+    #     fmt.set_powerlimits((0, 0))
+        
+    #     # Create triangulation directly from points
+    #     triang = matplotlib.tri.Triangulation(xx, yy)
+
+    #     # Plot prediction
+    #     max = np.average([pred.max(), vel.max()])
+    #     min = np.average([pred.min(), vel.min()])
+
+    #     v_range = np.max([np.abs(max), np.abs(min)])
+    #     print(f"Using v_range: {v_range}")
+
+    #     # Plot ground truth
+    #     norm1 = mcolors.Normalize(vmin=min, vmax=max)
+    #     cs1 = ax1.tricontourf(triang, vel.squeeze(), 100, cmap=colormap, norm=norm1)
+    #     divider1 = make_axes_locatable(ax1)
+    #     cax1 = divider1.append_axes("right", size="5%", pad=0.1)
+    #     cbar1 = plt.colorbar(cs1, cax=cax1, format=fmt)   
+        
+    #     tick_locator = MaxNLocator(nbins=3)
+    #     cbar1.locator = tick_locator
+    #     cbar1.ax.yaxis.set_offset_position('left')
+    #     cbar1.update_ticks()
+
+    #     ax1.add_patch(self.plot_airfoil(airfoil_color=airfoil_color))
+    #     ax1.set_aspect('equal', 'box')
+    #     ax1.set_title(f'Ground Truth')
+        
+    #     if xlim is not None:
+    #         ax1.set_xlim(xlim)
+    #     if ylim is not None:
+    #         ax1.set_ylim(ylim)
+
+    #     norm2 = mcolors.Normalize(vmin=min, vmax=max)
+    #     cs2 = ax2.tricontourf(triang, pred.squeeze(), 100, cmap=colormap, norm=norm2)
+    #     divider2 = make_axes_locatable(ax2)
+    #     cax2 = divider2.append_axes("right", size="5%", pad=0.1)
+    #     cbar2 = plt.colorbar(cs2, cax=cax2, format=fmt)
+        
+    #     tick_locator = MaxNLocator(nbins=3)
+    #     cbar2.locator = tick_locator
+    #     cbar2.ax.yaxis.set_offset_position('left')
+    #     cbar2.update_ticks()
+
+    #     ax2.add_patch(self.plot_airfoil(airfoil_color=airfoil_color))
+    #     ax2.set_aspect('equal', 'box')
+    #     ax2.set_title(f'Prediction Results')
+    #     if xlim is not None:
+    #         ax2.set_xlim(xlim)
+    #     if ylim is not None:
+    #         ax2.set_ylim(ylim)
+
+    #     # Adjust layout
+    #     plt.tight_layout()
+    #     fig.suptitle('Velocity Field Comparison for $\mu$ = '+str(np.around(params.detach().cpu().numpy(), 2)), y=y0)
+
+    #     if save:
+    #         if not os.path.exists(self.save_dir):
+    #             os.makedirs(self.save_dir)
+    #         plt.savefig(os.path.join(self.save_dir, f"comparison_fields_{np.around(params.detach().cpu().numpy(), 2)}.png"))
+    #     else:
+    #         plt.show()
+
+    #     plt.close(fig)
+    def plot_comparison_fields(self, SNAP, device, dataset, params, dim_index=0,
+                           comp="_U", airfoil_color="grey", adjust_title=None,
+                           xlim=None, ylim=None, colormap='bwr', save=False):
+        """
+        Plots the velocity field solution for a given snapshot, comparing ground truth and prediction side-by-side.
+        """
+        # Create horizontal layout
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+        # y0 = 0.7 if adjust_title is None else adjust_title
+
+        # Run model prediction
         pred, _, _ = self.model(dataset[SNAP].to(device), params.to(device))
         pred = pred.detach().cpu().numpy()
-        if not pred.ndim == 1:
+        if pred.shape[1] != 1:
             pred = pred[:, dim_index]
 
-        # Get coordinates and velocity data
-        xx = dataset[SNAP].pos[:,0].detach().cpu().numpy()
-        yy = dataset[SNAP].pos[:,1].detach().cpu().numpy()
+        # Ground truth velocity
+        xx = dataset[SNAP].pos[:, 0].detach().cpu().numpy()
+        yy = dataset[SNAP].pos[:, 1].detach().cpu().numpy()
 
-        if dataset[SNAP].x.ndim == 1:
-            vel = dataset[SNAP].x.detach().cpu().numpy()
-        else:
-            vel = dataset[SNAP].x.detach().cpu().numpy().squeeze()[:, dim_index]
+        vel = dataset[SNAP].y.detach().cpu().numpy()
+        if vel.shape[1] != 1:
+            vel = vel.squeeze()[:, dim_index]
 
-        fmt = ticker.ScalarFormatter(useMathText=True)
-        fmt.set_powerlimits((0, 0))
-        
-        # Create triangulation directly from points
         triang = matplotlib.tri.Triangulation(xx, yy)
 
-        # Plot prediction
-        max = np.average([pred.max(), vel.max()])
-        min = np.average([pred.min(), vel.min()])
-
-        v_range = np.max([np.abs(max), np.abs(min)])
-        print(f"Using v_range: {v_range}")
+        # Normalize color range
+        vmax = np.max([pred.max(), vel.max()])
+        vmin = np.min([pred.min(), vel.min()])
+        norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+        fmt = ticker.ScalarFormatter(useMathText=True)
+        fmt.set_powerlimits((0, 0))
+        tick_locator = MaxNLocator(nbins=3)
 
         # Plot ground truth
-        norm1 = mcolors.Normalize(vmin=min, vmax=max)
-        cs1 = ax1.tricontourf(triang, vel.squeeze(), 100, cmap=colormap, norm=norm1)
+        cs1 = ax1.tricontourf(triang, vel, 100, cmap=colormap, norm=norm)
         divider1 = make_axes_locatable(ax1)
         cax1 = divider1.append_axes("right", size="5%", pad=0.1)
-        cbar1 = plt.colorbar(cs1, cax=cax1, format=fmt)   
-        
-        tick_locator = MaxNLocator(nbins=3)
+        cbar1 = plt.colorbar(cs1, cax=cax1, format=fmt)
         cbar1.locator = tick_locator
         cbar1.ax.yaxis.set_offset_position('left')
         cbar1.update_ticks()
 
         ax1.add_patch(self.plot_airfoil(airfoil_color=airfoil_color))
         ax1.set_aspect('equal', 'box')
-        ax1.set_title(f'Ground Truth')
-        
-        if xlim is not None:
-            ax1.set_xlim(xlim)
-        if ylim is not None:
-            ax1.set_ylim(ylim)
+        ax1.set_title('Ground Truth')
+        if xlim: ax1.set_xlim(xlim)
+        if ylim: ax1.set_ylim(ylim)
 
-        norm2 = mcolors.Normalize(vmin=min, vmax=max)
-        cs2 = ax2.tricontourf(triang, pred.squeeze(), 100, cmap=colormap, norm=norm2)
+        # Plot prediction
+        cs2 = ax2.tricontourf(triang, pred, 100, cmap=colormap, norm=norm)
         divider2 = make_axes_locatable(ax2)
         cax2 = divider2.append_axes("right", size="5%", pad=0.1)
         cbar2 = plt.colorbar(cs2, cax=cax2, format=fmt)
-        
-        tick_locator = MaxNLocator(nbins=3)
         cbar2.locator = tick_locator
         cbar2.ax.yaxis.set_offset_position('left')
         cbar2.update_ticks()
 
         ax2.add_patch(self.plot_airfoil(airfoil_color=airfoil_color))
         ax2.set_aspect('equal', 'box')
-        ax2.set_title(f'Prediction Results')
-        if xlim is not None:
-            ax2.set_xlim(xlim)
-        if ylim is not None:
-            ax2.set_ylim(ylim)
+        ax2.set_title('Reconstruction Results')
+        if xlim: ax2.set_xlim(xlim)
+        if ylim: ax2.set_ylim(ylim)
 
-        # Adjust layout
+        fig.suptitle(r'Velocity Field Comparison for $\mu$ = ' +
+                    str(np.around(params.detach().cpu().numpy(), 2)), y=1.01, fontsize=20)
+
         plt.tight_layout()
-        fig.suptitle('Velocity Field Comparison for $\mu$ = '+str(np.around(params.detach().cpu().numpy(), 2)), y=y0)
-
         if save:
-            if not os.path.exists(self.save_dir):
-                os.makedirs(self.save_dir)
-            plt.savefig(os.path.join(self.save_dir, f"comparison_fields_{np.around(params.detach().cpu().numpy(), 2)}.png"))
+            os.makedirs(self.save_dir, exist_ok=True)
+            plt.savefig(os.path.join(self.save_dir,
+                        f"comparison_fields_{np.around(Param.detach().cpu().numpy(), 2)}.png"),
+                        dpi=300, bbox_inches='tight')
         else:
             plt.show()
 
         plt.close(fig)
+
 
     def plot_velocity_field_error(self, data: Data, 
                                   params,
@@ -230,11 +309,11 @@ class Plot:
             return
         import torch.nn.functional as F
         if not data.x.ndim == 1:
-            ground_truth = data.x[:, dim_index]
+            ground_truth = data.y[:, dim_index]
         else:
-            ground_truth = data.x
+            ground_truth = data.y
         pred, _, _ = self.model(data.to(device), params.to(device))
-        if not pred.ndim == 1:
+        if not pred.shape[1] == 1:
             pred = pred[:, dim_index]
         error = F.mse_loss(target=ground_truth, input=pred, reduction= 'none')
         mse_error = F.mse_loss(target=ground_truth, input=pred, reduction='mean')

@@ -20,22 +20,23 @@ class GraphDecoder(torch.nn.Module):
         x = decoded_reshaped_x
         for i, (conv, norm) in enumerate(zip(self.convolution_layers.convs, self.convolution_layers.batch_norms)):
             if self.convolution_layers.config['type'] in ['GMM', 'Cheb', 'GCN']:
-                x = conv(x = x, edge_index = data.edge_index, edge_weight = data.edge_weight)
+                x_new = conv(x = x, edge_index = data.edge_index, edge_weight = data.edge_weight)
             elif self.convolution_layers.config['type'] in ['GAT', "PNA"]:
-                x = conv(x = x, edge_index = data.edge_index, edge_attr = data.edge_attr)
+                x_new = conv(x = x, edge_index = data.edge_index, edge_attr = data.edge_attr)
             elif self.convolution_layers.config['type'] in ['SAGE']:
-                x = conv(x = x, edge_index = data.edge_index)
+                x_new = conv(x = x, edge_index = data.edge_index)
             # if is_verbose:
             #     print(f"Convolution layer {i}: {conv.__class__.__name__}, input shape: {x.shape}, edge_index shape: {data.edge_index.shape}, edge_attr shape: {data.edge_attr.shape if data.edge_attr is not None else 'None'}")
             if i < (len(self.convolution_layers.convs) - 1):
-                x = self.convolution_layers.act(x)
+                x_new = self.convolution_layers.act(x_new)
 
-            if self.convolution_layers.is_skip_connection:
-                x = x + decoded_reshaped_x
+            if self.convolution_layers.is_skip_connection and x.shape == x_new.shape:
+                x_new = x + x_new
 
             if norm is not None and (i != len(self.convolution_layers.convs) - 2):
-                x = norm(x)
-            x = self.convolution_layers.dropout(x)
+                x_new = norm(x_new)
+            x_new = self.convolution_layers.dropout(x_new)
+            x = x_new
         return x
 
     def reset_parameters(self):

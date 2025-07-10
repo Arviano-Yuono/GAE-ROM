@@ -5,20 +5,14 @@ from src.utils.commons import get_config
 
 config = get_config('configs/default.yaml')['training']
 
-def weighted_mse_loss(pred, target, weight):
-    # print(f"Weighted MSE Loss: {weight.shape}, {pred.shape}, {target.shape}")
-    return torch.mean(weight * (pred - target) ** 2)
-
-def weighted_hybrid_loss(pred, target, weight, eps=1e-3, alpha=0.7):
-    mse = torch.mean(weight * (pred - target) ** 2)
-    rel = torch.mean(weight * torch.abs(pred - target) / (torch.abs(target) + eps))
+def hybrid_loss(pred, target, eps=1e-3, alpha=0.5):
+    mse = torch.mean((pred - target) ** 2)
+    rel = torch.mean(torch.abs(pred - target) / (torch.abs(target) + eps))
     return alpha * mse + (1 - alpha) * rel
 
 def val(model, 
         device: torch.device, 
-        surface_mask: torch.Tensor,
         val_loader: torch_geometric.loader.DataLoader, 
-        lambda_surface: float = 0,
         lambda_map: float = 1):
     model = model.to(device)
     model.eval()
@@ -28,11 +22,10 @@ def val(model,
     reconstruction_loss_cumulative = 0
     map_loss_cumulative = 0
     total_loss_cumulative = 0
-    total_batches = 0
     start_ind = 0
-    weight = torch.exp(-torch.tensor(val_loader.dataset.log_scaled_distannce)).to(device)
-
+    
     with torch.no_grad():
+        total_batches = 0
         for val_batch in val_loader:
             # Move val_batch to device and ensure correct data type
             val_batch = val_batch.to(device)
@@ -49,34 +42,20 @@ def val(model,
                 out, latent_var, est_latent_var = model(val_batch, current_params)
                 
             start_ind += val_batch.batch_size
-        
+            
             # Calculate reconstruction loss
             # reconstruction_loss = F.mse_loss(input=out[surface_mask], target=target[surface_mask], reduction='mean') * lambda_surface \
             # + F.mse_loss(input=out[~surface_mask], target=target[~surface_mask], reduction='mean')
             
-            # wEIGHTED Hybrid loss
-            if lambda_surface == 0:
-                reconstruction_loss = weighted_hybrid_loss(pred=out, target=target, weight=weight)
-            else:
-                reconstruction_loss = F.mse_loss(
-                    input=out[surface_mask], 
-                    target=target[surface_mask]
-                ) * lambda_surface + weighted_hybrid_loss(
-                    pred=out, 
-                    target=target, 
-                    weight=weight
-                )
-            # # calculate weighted MSE loss for latent variable
-            # reconstruction_loss = weighted_mse_loss(pred=out[surface_mask], target=target[surface_mask], weight=weight[surface_mask]) * lambda_surface \
-            + weighted_mse_loss(pred=out[~surface_mask], target=target[~surface_mask], weight=1.2*weight[~surface_mask])
-
+            reconstruction_loss = F.mse_loss(input=out, target=target, reduction='mean')
+            
             if latent_var is None or est_latent_var is None:
                 map_loss = torch.tensor(0., device=device)
             else:
                 # Ensure latent_var and est_latent_var are float32
                 latent_var = latent_var.float()
                 est_latent_var = est_latent_var.float()
-                map_loss = F.mse_loss(est_latent_var, latent_var)
+                map_loss = hybrid_loss(pred=est_latent_var, target=latent_var)
             
             total_loss = reconstruction_loss + lambda_map * map_loss
 

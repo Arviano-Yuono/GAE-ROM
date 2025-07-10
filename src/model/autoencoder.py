@@ -37,6 +37,7 @@ class LinearAutoencoder(nn.Module):
     def forward(self, x, is_verbose: bool = False):
         shape = x.shape
         flattened_x = torch.flatten(x)
+        # flattened_x = x.view(shape[0], -1)  # Flatten the input while keeping batch size
         if is_verbose:
             print(f"Input shape: {x.shape} -> Flattened shape: {flattened_x.shape}")
         x_encoded = self.encoder(flattened_x.float())
